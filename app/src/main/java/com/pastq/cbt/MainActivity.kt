@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.pastq.cbt.ui.DownloadScreen
+import com.pastq.cbt.update.Updater
 import com.pastq.cbt.ui.ExamScreen
 import com.pastq.cbt.ui.ExamSetupScreen
 import com.pastq.cbt.ui.HistoryScreen
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repo = (application as CbtApplication).repository
+        Updater.check()
         setContent {
             AppTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
@@ -64,6 +66,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Updater.setForeground(true)
+        Updater.onResume()
+    }
+
+    override fun onPause() {
+        Updater.setForeground(false)
+        super.onPause()
     }
 }
 

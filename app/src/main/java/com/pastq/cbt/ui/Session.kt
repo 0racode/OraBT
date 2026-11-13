@@ -4,15 +4,24 @@ import com.pastq.cbt.data.QuestionEntity
 
 data class ExamConfig(
     val title: String,
+    val mode: String,
     val subjects: List<String>,
-    val perSubject: Int,
+    /** Number of questions to draw for each subject. */
+    val quotas: Map<String, Int>,
     val minutes: Int,
     val type: String,
 )
 
 data class ReviewItem(val q: QuestionEntity, val picked: Char?)
 
-data class ExamOutcome(val title: String, val total: Int, val correct: Int, val seconds: Int)
+data class ExamOutcome(
+    val title: String,
+    val mode: String,
+    val total: Int,
+    val correct: Int,
+    val seconds: Int,
+    val breakdown: List<String>,
+)
 
 /** Small in-memory hand-off between screens (config in, results out). */
 object Session {

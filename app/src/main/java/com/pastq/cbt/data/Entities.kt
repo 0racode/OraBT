@@ -1,5 +1,6 @@
 package com.pastq.cbt.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -38,6 +39,9 @@ data class ExamResultEntity(
     val correct: Int,
     val seconds: Int,
     val timestamp: Long,
+    @ColumnInfo(defaultValue = "''") val mode: String = "",
+    @ColumnInfo(defaultValue = "''") val subjects: String = "",
+    @ColumnInfo(defaultValue = "''") val breakdown: String = "",
 )
 
 data class SubjectCount(val subject: String, val count: Int)

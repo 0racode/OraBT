@@ -58,7 +58,17 @@ class ExamViewModel(private val repo: Repository) : ViewModel() {
                 loading = false
                 return@launch
             }
-            questions = cfg.subjects.flatMap { repo.random(it, cfg.type, cfg.perSubject) }
+            questions = cfg.subjects.flatMap { subject ->
+                val want = cfg.quotas[subject] ?: 20
+                val first = repo.random(subject, cfg.type, want)
+                if (first.size >= want || cfg.type.isEmpty()) {
+                    first
+                } else {
+                    // Not enough of this exam type: top up with other types so the quota is met.
+                    val have = first.map { it.id }.toSet()
+                    first + repo.random(subject, "", want * 2).filter { it.id !in have }.take(want - first.size)
+                }
+            }
             totalSeconds = cfg.minutes * 60
             remaining = totalSeconds
             loading = false
@@ -85,12 +95,18 @@ class ExamViewModel(private val repo: Repository) : ViewModel() {
         val used = totalSeconds - remaining
         val title = config?.title ?: "Exam"
         Session.review = review
-        Session.outcome = ExamOutcome(title, questions.size, correct, used)
+        val perSubject = review.groupBy { it.q.subject }.map { (subject, items) ->
+            "$subject ${items.count { it.picked == it.q.answer.firstOrNull() }}/${items.size}"
+        }
+        val mode = config?.mode ?: "Custom"
+        Session.outcome = ExamOutcome(title, mode, questions.size, correct, used, perSubject)
         viewModelScope.launch {
             repo.saveResult(
                 ExamResultEntity(
                     title = title, total = questions.size, correct = correct,
                     seconds = used, timestamp = System.currentTimeMillis(),
+                    mode = mode, subjects = config?.subjects?.joinToString(", ") ?: "",
+                    breakdown = perSubject.joinToString(" · "),
                 )
             )
         }

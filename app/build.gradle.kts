@@ -21,23 +21,41 @@ android {
         applicationId = "com.pastq.cbt"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (project.findProperty("versionCode") as String? ?: "1").toInt()
+        versionName = project.findProperty("versionName") as String? ?: "1.0.0"
 
         // Put ALOC_TOKEN=your_token in local.properties (never commit it)
         buildConfigField("String", "ALOC_TOKEN", "\"${localProps.getProperty("ALOC_TOKEN", "")}\"")
         // Public, read-only access to the question library (row-level security blocks writes)
         buildConfigField("String", "SUPABASE_URL", "\"https://wyzswbklytklzbcmihsh.supabase.co/\"")
         buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_E21JIx3tbNTX9K3bhR6Ieg_fZRL1xqj\"")
+        buildConfigField("String", "UPDATE_OWNER", "\"0racode\"")
+        buildConfigField("String", "UPDATE_REPO", "\"OraBT\"")
         buildConfigField("String", "ALOC_BASE_URL", "\"https://questions.aloc.com.ng/api/v2/\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            // Provided by CI from GitHub secrets. Without them, release builds fall back to the debug key.
+            val ks = System.getenv("KEYSTORE_FILE")
+            if (ks != null && file(ks).exists() && !System.getenv("KEYSTORE_PASSWORD").isNullOrEmpty()) {
+                storeFile = file(ks)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            isMinifyEnabled = false
+            val rel = signingConfigs.getByName("release")
+            signingConfig = if (rel.storeFile != null) rel else signingConfigs.getByName("debug")
         }
     }
+
+    lint { checkReleaseBuilds = false }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

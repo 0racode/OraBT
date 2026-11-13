@@ -2,7 +2,10 @@
 
 package com.pastq.cbt.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -10,15 +13,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -33,11 +38,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.pastq.cbt.data.Repository
 import java.text.DateFormat
 import java.util.Date
@@ -77,6 +83,21 @@ fun PracticeScreen(repo: Repository, onBack: () -> Unit) {
     }
 }
 
+/** Light-weight numbered cell for the question jump grid (cheap enough for 180+ questions). */
+@Composable
+private fun NumberCell(n: Int, current: Boolean, answered: Boolean, onClick: () -> Unit) {
+    val bg = when {
+        current -> MaterialTheme.colorScheme.primary
+        answered -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Box(
+        Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(bg).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text("$n", color = fg, style = MaterialTheme.typography.labelMedium) }
+}
+
 @Composable
 fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
     val vm: ExamViewModel = viewModel(factory = viewModelFactory { initializer { ExamViewModel(repo) } })
@@ -98,7 +119,12 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(formatTime(vm.remaining), color = if (vm.remaining < 300) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
+                title = {
+                    Text(
+                        formatTime(vm.remaining),
+                        color = if (vm.remaining < 300) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                },
                 actions = { TextButton(onClick = { confirm = true }) { Text("Submit") } },
             )
         },
@@ -110,7 +136,10 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
             vm.questions.isEmpty() -> Column(Modifier.padding(pad).padding(24.dp)) { Text("No questions could be loaded.") }
             else -> Column(Modifier.padding(pad).padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    Text("Question ${vm.index + 1} of ${vm.questions.size}", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "Question ${vm.index + 1} of ${vm.questions.size} · answered ${vm.answers.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                     QuestionCard(
                         q = vm.questions[vm.index],
                         picked = vm.answers[vm.index],
@@ -119,18 +148,16 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     Text("Jump to", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 16.dp))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        vm.questions.indices.forEach { i ->
-                            FilterChip(
-                                selected = i == vm.index,
-                                onClick = { vm.index = i },
-                                label = { Text("${i + 1}") },
-                                leadingIcon = null,
-                                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                                    containerColor = if (vm.answers[i] != null) MaterialTheme.colorScheme.tertiaryContainer
-                                    else MaterialTheme.colorScheme.surface,
-                                ),
-                            )
+                    // Grouped by subject so UTME's four subjects are easy to navigate.
+                    val subjects = vm.questions.map { it.subject }.distinct()
+                    subjects.forEach { subject ->
+                        Text(subject, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            vm.questions.forEachIndexed { i, q ->
+                                if (q.subject == subject) {
+                                    NumberCell(i + 1, current = i == vm.index, answered = vm.answers[i] != null) { vm.index = i }
+                                }
+                            }
                         }
                     }
                 }
@@ -147,7 +174,14 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
 fun ResultScreen(onHome: () -> Unit) {
     val outcome = Session.outcome
     val review = Session.review
-    Scaffold(topBar = { TopAppBar(title = { Text("Result") }) }) { pad ->
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Result") }) },
+        bottomBar = {
+            androidx.compose.material3.Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
+                Button(onClick = onHome, modifier = Modifier.fillMaxWidth().padding(16.dp)) { Text("Back to home") }
+            }
+        },
+    ) { pad ->
         if (outcome == null) {
             Column(Modifier.padding(pad).padding(24.dp)) { Text("No result to show.") }
             return@Scaffold
@@ -158,8 +192,8 @@ fun ResultScreen(onHome: () -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("$pct%", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.primary)
                     Text("${outcome.correct} / ${outcome.total} correct · ${formatTime(outcome.seconds)}")
-                    Text(outcome.title, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = onHome, modifier = Modifier.padding(top = 12.dp)) { Text("Back to home") }
+                    Text(outcome.mode + " exam", style = MaterialTheme.typography.labelLarge)
+                    outcome.breakdown.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
             item { Text("Review", style = MaterialTheme.typography.titleMedium) }
@@ -181,13 +215,19 @@ fun HistoryScreen(repo: Repository, onBack: () -> Unit) {
             LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(results) { r ->
                     val pct = if (r.total == 0) 0 else r.correct * 100 / r.total
-                    androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("$pct%  (${r.correct}/${r.total})", style = MaterialTheme.typography.titleMedium)
-                            Text(r.title, style = MaterialTheme.typography.bodyMedium)
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "$pct%  (${r.correct}/${r.total})" + if (r.mode.isNotBlank()) "  ·  ${r.mode}" else "",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            // Older results only have a title; newer ones list the subjects and per-subject scores.
+                            Text(r.subjects.ifBlank { r.title }, style = MaterialTheme.typography.bodyMedium)
+                            if (r.breakdown.isNotBlank()) Text(r.breakdown, style = MaterialTheme.typography.bodySmall)
                             Text(
                                 DateFormat.getDateTimeInstance().format(Date(r.timestamp)) + " · " + formatTime(r.seconds),
                                 style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

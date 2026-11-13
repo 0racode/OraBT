@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,10 +29,42 @@ jobs:
       - name: Add ALOC token (optional secret)
         run: echo "ALOC_TOKEN=${{ secrets.ALOC_TOKEN }}" >> local.properties
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Prepare signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::KEYSTORE_BASE64 secret is missing. Building with a temporary debug key; no release will be published."
+          fi
+
+      - name: Build APK
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          gradle assembleRelease --stacktrace \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName=1.${{ github.run_number }}
+          cp app/build/outputs/apk/release/*.apk "PastQ-CBT-${{ github.run_number }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PastQ-CBT-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: PastQ-CBT-apk
+          path: PastQ-CBT-*.apk
+
+      - name: Publish GitHub Release
+        if: steps.signing.outputs.has_key == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(git log -1 --pretty=%B | head -5)
+          gh release create "build-${{ github.run_number }}" "PastQ-CBT-${{ github.run_number }}.apk" \
+            --title "PastQ CBT 1.${{ github.run_number }}" \
+            --notes "$NOTES" \
+            --latest
