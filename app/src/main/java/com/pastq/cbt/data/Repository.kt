@@ -65,6 +65,23 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         qDao.count() - before
     }
 
+    /**
+     * Asks the cloud function to fetch more questions from ALOC for [subjectName] and save them
+     * to the shared library (the ALOC token stays on the server). Max 5 ALOC calls per request.
+     * Throws with a readable message on failure or when the daily limit is hit.
+     */
+    suspend fun cloudFetch(subjectName: String, calls: Int): SyncReply = withContext(Dispatchers.IO) {
+        val key = com.pastq.cbt.BuildConfig.SUPABASE_KEY
+        val subjectKey = Subjects.keyByName[subjectName] ?: error("Unknown subject")
+        try {
+            CloudApi.service.syncAloc(key, "Bearer $key", SyncRequest(subjectKey, calls))
+        } catch (e: retrofit2.HttpException) {
+            val raw = e.response()?.errorBody()?.string().orEmpty()
+            val msg = Regex("\"error\"\\s*:\\s*\"([^\"]*)\"").find(raw)?.groupValues?.get(1)
+            error(msg ?: "Server error ${e.code()}")
+        }
+    }
+
     /** Quick top-up used by the practice screen (3 API calls). Returns questions added. */
     suspend fun refreshFromApi(subjectName: String): Int {
         val r = syncSubject(subjectName, 3)

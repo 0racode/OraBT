@@ -61,6 +61,39 @@ fun DownloadScreen(repo: Repository, onBack: () -> Unit) {
         }
     }
 
+    fun updateCloud() {
+        scope.launch {
+            busy = true
+            var added = 0
+            var used = 0
+            var failure: String? = null
+            outer@ for (sc in counts) {
+                var left = budget
+                var empty = 0
+                while (left > 0 && empty < 2) {
+                    val n = minOf(5, left)
+                    status = "${sc.subject}: asking the server for $n calls..."
+                    try {
+                        val r = repo.cloudFetch(sc.subject, n)
+                        added += r.added
+                        used += r.calls
+                        left -= n
+                        empty = if (r.added == 0) empty + 1 else 0
+                        if (r.error != null) { failure = r.error; break@outer }
+                    } catch (e: Exception) {
+                        failure = e.message ?: "Could not reach the server"
+                        break@outer
+                    }
+                }
+            }
+            status = "Syncing to this phone..."
+            val local = try { repo.syncFromCloud() } catch (e: Exception) { 0 }
+            status = (if (failure != null) "Stopped: $failure. " else "Done. ") +
+                "Cloud library grew by $added questions ($used ALOC calls). $local new on this phone."
+            busy = false
+        }
+    }
+
     Scaffold(topBar = { BackBar("Download questions", onBack) }) { pad ->
         LazyColumn(
             Modifier.padding(pad).padding(horizontal = 16.dp),
@@ -102,6 +135,11 @@ fun DownloadScreen(repo: Repository, onBack: () -> Unit) {
                             FilterChip(selected = budget == n, onClick = { budget = n }, label = { Text("$n") })
                         }
                     }
+                    Button(
+                        enabled = !busy && counts.isNotEmpty(),
+                        onClick = { updateCloud() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (busy) "Working..." else "Update cloud library (shared, uses ALOC calls)") }
                     Button(
                         enabled = !busy && AlocApi.hasToken && counts.isNotEmpty(),
                         onClick = { run(counts.map { it.subject }) },

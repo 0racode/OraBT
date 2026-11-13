@@ -6,12 +6,35 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.Serializable
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Header
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
+@Serializable
+data class SyncRequest(val subject: String, val calls: Int)
+
+@Serializable
+data class SyncReply(
+    val subject: String = "",
+    val added: Int = 0,
+    val fetched: Int = 0,
+    val calls: Int = 0,
+    val remaining_today: Int = 0,
+    val error: String? = null,
+)
+
 interface CloudService {
+    @POST("functions/v1/sync-aloc")
+    suspend fun syncAloc(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Body body: SyncRequest,
+    ): SyncReply
+
     @GET("rest/v1/pastq_questions")
     suspend fun page(
         @Header("apikey") key: String,
