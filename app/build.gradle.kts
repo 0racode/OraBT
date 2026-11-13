@@ -26,6 +26,9 @@ android {
 
         // Put ALOC_TOKEN=your_token in local.properties (never commit it)
         buildConfigField("String", "ALOC_TOKEN", "\"${localProps.getProperty("ALOC_TOKEN", "")}\"")
+        // Public, read-only access to the question library (row-level security blocks writes)
+        buildConfigField("String", "SUPABASE_URL", "\"https://wyzswbklytklzbcmihsh.supabase.co/\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_E21JIx3tbNTX9K3bhR6Ieg_fZRL1xqj\"")
         buildConfigField("String", "ALOC_BASE_URL", "\"https://questions.aloc.com.ng/api/v2/\"")
     }
 

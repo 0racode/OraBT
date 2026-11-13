@@ -45,6 +45,26 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         qDao.insertAll(items)
     }
 
+    /**
+     * Copies the whole shared question library from the cloud (Supabase) onto this device.
+     * Uses no ALOC API calls. Returns the number of questions that were new to this device.
+     */
+    suspend fun syncFromCloud(onProgress: (Int) -> Unit = {}): Int = withContext(Dispatchers.IO) {
+        val before = qDao.count()
+        val key = com.pastq.cbt.BuildConfig.SUPABASE_KEY
+        var offset = 0
+        val pageSize = 1000
+        while (true) {
+            val page = CloudApi.service.page(key, "Bearer $key", limit = pageSize, offset = offset)
+            if (page.isEmpty()) break
+            qDao.insertAll(page)
+            offset += page.size
+            onProgress(offset)
+            if (page.size < pageSize) break
+        }
+        qDao.count() - before
+    }
+
     /** Quick top-up used by the practice screen (3 API calls). Returns questions added. */
     suspend fun refreshFromApi(subjectName: String): Int {
         val r = syncSubject(subjectName, 3)

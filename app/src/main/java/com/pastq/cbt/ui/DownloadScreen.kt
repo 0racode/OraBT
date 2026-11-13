@@ -68,6 +68,23 @@ fun DownloadScreen(repo: Repository, onBack: () -> Unit) {
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = !busy,
+                        onClick = {
+                            scope.launch {
+                                busy = true
+                                status = "Syncing from cloud..."
+                                status = try {
+                                    val n = repo.syncFromCloud { status = "Synced $it questions..." }
+                                    "Cloud sync done. $n new questions on this device. No API calls used."
+                                } catch (e: Exception) {
+                                    "Cloud sync failed: ${e.message ?: "check your connection"}"
+                                }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Sync from cloud (free, no API calls)") }
                     Text(
                         "Each API call fetches up to 40 random questions and saves them on your phone for offline use. " +
                             "Downloading stops early when no new questions are coming in.",
