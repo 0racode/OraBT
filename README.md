@@ -33,3 +33,11 @@ The app works without a token; only "Fetch more questions online" needs it.
 
 ## Ideas for next versions
 Leaderboards or accounts, per-subject progress charts, bookmarks, a UTME preset (English 60 + 3 subjects x 40, 2 hours), dark-mode polish, Play Store release signing.
+
+## Releases and in-app updates
+Every push builds a signed APK. When the signing secrets exist, the build is also published as a GitHub Release (tag `build-N`), and installed apps offer it as an in-app update.
+
+Add these three repository secrets (Settings, Secrets and variables, Actions) and keep a private backup of them. If the signing key is ever lost, phones would have to uninstall and reinstall to get updates.
+- `KEYSTORE_BASE64`
+- `KEYSTORE_PASSWORD`
+- `KEY_ALIAS`
