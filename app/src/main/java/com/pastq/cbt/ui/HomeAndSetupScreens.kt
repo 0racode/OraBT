@@ -54,7 +54,7 @@ fun BackBar(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-fun HomeScreen(repo: Repository, onPractice: () -> Unit, onExam: () -> Unit, onHistory: () -> Unit) {
+fun HomeScreen(repo: Repository, onPractice: () -> Unit, onExam: () -> Unit, onHistory: () -> Unit, onDownload: () -> Unit) {
     val counts by repo.subjectCounts.collectAsStateWithLifecycle(initialValue = emptyList())
     var seeding by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
@@ -77,6 +77,7 @@ fun HomeScreen(repo: Repository, onPractice: () -> Unit, onExam: () -> Unit, onH
                 Button(onClick = onPractice, modifier = Modifier.fillMaxWidth()) { Text("Practice by subject") }
                 Button(onClick = onExam, modifier = Modifier.fillMaxWidth()) { Text("Take a timed CBT exam") }
                 OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("My results") }
+                OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Download more questions") }
             }
         }
     }

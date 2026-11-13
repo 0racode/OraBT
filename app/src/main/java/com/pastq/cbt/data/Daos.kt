@@ -16,6 +16,9 @@ interface QuestionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<QuestionEntity>)
 
+    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
+    suspend fun countFor(subject: String): Int
+
     @Query("SELECT subject, COUNT(*) AS count FROM questions GROUP BY subject ORDER BY subject")
     fun subjectCounts(): Flow<List<SubjectCount>>
 

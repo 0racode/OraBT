@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.pastq.cbt.ui.DownloadScreen
 import com.pastq.cbt.ui.ExamScreen
 import com.pastq.cbt.ui.ExamSetupScreen
 import com.pastq.cbt.ui.HistoryScreen
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
                                 onPractice = { nav.navigate("practiceSetup") },
                                 onExam = { nav.navigate("examSetup") },
                                 onHistory = { nav.navigate("history") },
+                                onDownload = { nav.navigate("download") },
                             )
                         }
                         composable("practiceSetup") {
@@ -56,6 +58,7 @@ class MainActivity : ComponentActivity() {
                         composable("result") {
                             ResultScreen(onHome = { nav.popBackStack("home", inclusive = false) })
                         }
+                        composable("download") { DownloadScreen(repo, onBack = { nav.popBackStack() }) }
                         composable("history") { HistoryScreen(repo, onBack = { nav.popBackStack() }) }
                     }
                 }
