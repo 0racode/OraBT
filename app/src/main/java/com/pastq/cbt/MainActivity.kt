@@ -16,7 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.pastq.cbt.ui.AccountScreen
 import com.pastq.cbt.ui.DownloadScreen
+import com.pastq.cbt.ui.LeaderboardScreen
 import com.pastq.cbt.update.Updater
 import com.pastq.cbt.ui.ExamScreen
 import com.pastq.cbt.ui.ExamSetupScreen
@@ -43,6 +45,8 @@ class MainActivity : ComponentActivity() {
                                 onExam = { nav.navigate("examSetup") },
                                 onHistory = { nav.navigate("history") },
                                 onDownload = { nav.navigate("download") },
+                                onLeaderboard = { nav.navigate("leaderboard") },
+                                onAccount = { nav.navigate("account") },
                             )
                         }
                         composable("practiceSetup") {
@@ -58,8 +62,13 @@ class MainActivity : ComponentActivity() {
                             })
                         }
                         composable("result") {
-                            ResultScreen(onHome = { nav.popBackStack("home", inclusive = false) })
+                            ResultScreen(
+                                onHome = { nav.popBackStack("home", inclusive = false) },
+                                onAccount = { nav.navigate("account") },
+                            )
                         }
+                        composable("leaderboard") { LeaderboardScreen(repo, onBack = { nav.popBackStack() }) }
+                        composable("account") { AccountScreen(onBack = { nav.popBackStack() }) }
                         composable("download") { DownloadScreen(repo, onBack = { nav.popBackStack() }) }
                         composable("history") { HistoryScreen(repo, onBack = { nav.popBackStack() }) }
                     }

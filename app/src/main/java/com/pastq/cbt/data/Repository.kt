@@ -82,6 +82,30 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
+    suspend fun leaderboard(period: String): List<LeaderRow> = withContext(Dispatchers.IO) {
+        val key = com.pastq.cbt.BuildConfig.SUPABASE_KEY
+        CloudApi.service.leaderboard(key, "Bearer $key", LeaderboardRequest(period))
+    }
+
+    /** Sends the answers for server-side grading and ranking. */
+    suspend fun submitScore(req: SubmitRequest): ScoreStatus = withContext(Dispatchers.IO) {
+        val key = com.pastq.cbt.BuildConfig.SUPABASE_KEY
+        val token = AuthManager.token ?: return@withContext ScoreStatus.SignedOut
+        try {
+            ScoreStatus.Done(CloudApi.service.submitScore(key, "Bearer $token", req))
+        } catch (e: retrofit2.HttpException) {
+            if (e.code() == 401) AuthManager.sessionExpired()
+            ScoreStatus.Failed(e.friendlyMessage())
+        } catch (e: Exception) {
+            ScoreStatus.Failed(e.friendlyMessage())
+        }
+    }
+
+    /** Personal test history is kept for 7 days. */
+    suspend fun pruneOldResults() = withContext(Dispatchers.IO) {
+        rDao.deleteBefore(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
+    }
+
     /** Quick top-up used by the practice screen (3 API calls). Returns questions added. */
     suspend fun refreshFromApi(subjectName: String): Int {
         val r = syncSubject(subjectName, 3)

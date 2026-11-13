@@ -8,7 +8,12 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pastq.cbt.data.AnswerItem
+import com.pastq.cbt.data.AppScope
+import com.pastq.cbt.data.AuthManager
 import com.pastq.cbt.data.ExamResultEntity
+import com.pastq.cbt.data.ScoreStatus
+import com.pastq.cbt.data.SubmitRequest
 import com.pastq.cbt.data.QuestionEntity
 import com.pastq.cbt.data.Repository
 import kotlinx.coroutines.Job
@@ -100,15 +105,29 @@ class ExamViewModel(private val repo: Repository) : ViewModel() {
         }
         val mode = config?.mode ?: "Custom"
         Session.outcome = ExamOutcome(title, mode, questions.size, correct, used, perSubject)
-        viewModelScope.launch {
+        // AppScope (not viewModelScope) so saving and ranking finish even after this screen closes.
+        val subjectsText = config?.subjects?.joinToString(", ") ?: ""
+        AppScope.launch {
             repo.saveResult(
                 ExamResultEntity(
                     title = title, total = questions.size, correct = correct,
                     seconds = used, timestamp = System.currentTimeMillis(),
-                    mode = mode, subjects = config?.subjects?.joinToString(", ") ?: "",
+                    mode = mode, subjects = subjectsText,
                     breakdown = perSubject.joinToString(" · "),
                 )
             )
+        }
+        Session.scoreStatus.value = when {
+            AuthManager.token == null -> ScoreStatus.SignedOut
+            questions.size < 20 -> ScoreStatus.TooShort(questions.size)
+            else -> ScoreStatus.Submitting
+        }
+        if (Session.scoreStatus.value is ScoreStatus.Submitting) {
+            val request = SubmitRequest(
+                mode = mode, subjects = subjectsText, seconds = used,
+                answers = review.map { AnswerItem(it.q.id, it.picked?.toString()) },
+            )
+            AppScope.launch { Session.scoreStatus.value = repo.submitScore(request) }
         }
     }
 }

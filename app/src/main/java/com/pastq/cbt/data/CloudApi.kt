@@ -28,6 +28,27 @@ data class SyncReply(
 )
 
 interface CloudService {
+    @POST("functions/v1/pastq-auth")
+    suspend fun account(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Body body: AuthRequest,
+    ): AuthReply
+
+    @POST("rest/v1/rpc/pastq_leaderboard")
+    suspend fun leaderboard(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Body body: LeaderboardRequest,
+    ): List<LeaderRow>
+
+    @POST("functions/v1/submit-score")
+    suspend fun submitScore(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Body body: SubmitRequest,
+    ): SubmitReply
+
     @POST("functions/v1/sync-aloc")
     suspend fun syncAloc(
         @Header("apikey") key: String,

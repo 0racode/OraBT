@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.pastq.cbt.data.AppDatabase
+import com.pastq.cbt.data.AuthManager
 import com.pastq.cbt.data.Repository
 import com.pastq.cbt.update.Updater
 
@@ -27,5 +28,6 @@ class CbtApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Updater.init(this)
+        AuthManager.init(this)
     }
 }

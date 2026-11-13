@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pastq.cbt.data.AuthManager
 import com.pastq.cbt.data.Repository
 import com.pastq.cbt.update.UpdateBanner
 import com.pastq.cbt.update.VersionFooter
@@ -104,11 +105,15 @@ fun HomeScreen(
     onExam: () -> Unit,
     onHistory: () -> Unit,
     onDownload: () -> Unit,
+    onLeaderboard: () -> Unit,
+    onAccount: () -> Unit,
 ) {
+    val account by AuthManager.account.collectAsStateWithLifecycle()
     val counts by repo.subjectCounts.collectAsStateWithLifecycle(initialValue = emptyList())
     var seeding by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         repo.ensureSeeded()
+        repo.pruneOldResults()
         seeding = false
     }
     Scaffold { pad ->
@@ -127,6 +132,12 @@ fun HomeScreen(
                 Text("${counts.sumOf { it.count }} questions in ${counts.size} subjects, available offline")
                 Button(onClick = onPractice, modifier = Modifier.fillMaxWidth()) { Text("Practice by subject") }
                 Button(onClick = onExam, modifier = Modifier.fillMaxWidth()) { Text("Take a timed CBT exam") }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onLeaderboard, modifier = Modifier.weight(1f)) { Text("Leaderboard") }
+                    OutlinedButton(onClick = onAccount, modifier = Modifier.weight(1f)) {
+                        Text(if (account == null) "Sign in" else "Profile")
+                    }
+                }
                 OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("My results") }
                 OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Download more questions") }
             }

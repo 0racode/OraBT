@@ -47,6 +47,9 @@ interface ResultDao {
     @Insert
     suspend fun insert(result: ExamResultEntity)
 
+    @Query("DELETE FROM results WHERE timestamp < :cutoff")
+    suspend fun deleteBefore(cutoff: Long)
+
     @Query("SELECT * FROM results ORDER BY timestamp DESC")
     fun all(): Flow<List<ExamResultEntity>>
 }

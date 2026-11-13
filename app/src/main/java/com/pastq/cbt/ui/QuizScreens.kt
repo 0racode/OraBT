@@ -45,6 +45,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.pastq.cbt.data.Repository
+import com.pastq.cbt.data.ScoreStatus
 import java.text.DateFormat
 import java.util.Date
 
@@ -171,7 +172,8 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
 }
 
 @Composable
-fun ResultScreen(onHome: () -> Unit) {
+fun ResultScreen(onHome: () -> Unit, onAccount: () -> Unit) {
+    val scoreStatus by Session.scoreStatus.collectAsStateWithLifecycle()
     val outcome = Session.outcome
     val review = Session.review
     Scaffold(
@@ -196,6 +198,37 @@ fun ResultScreen(onHome: () -> Unit) {
                     outcome.breakdown.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Leaderboard", style = MaterialTheme.typography.titleSmall)
+                        when (val st = scoreStatus) {
+                            is ScoreStatus.SignedOut -> {
+                                Text("Sign in to put this score on the daily, weekly and monthly leaderboards.")
+                                OutlinedButton(onClick = onAccount) { Text("Sign in or create account") }
+                            }
+                            is ScoreStatus.Submitting -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Text("Checking your score...")
+                            }
+                            is ScoreStatus.TooShort -> Text("Only exams of 20 or more questions are ranked. This one had ${st.count}.")
+                            is ScoreStatus.Failed -> Text(st.message, color = MaterialTheme.colorScheme.error)
+                            is ScoreStatus.Done -> {
+                                val r = st.reply
+                                if (r.eligible) {
+                                    val ranks = r.ranks
+                                    fun place(v: Int?) = if (v == null) "-" else "#$v"
+                                    Text("Verified score: ${r.correct}/${r.total} (${"%.1f".format(r.pct)}%)")
+                                    Text("Today ${place(ranks?.day)}  ·  This week ${place(ranks?.week)}  ·  This month ${place(ranks?.month)}")
+                                } else {
+                                    Text(r.message ?: "This score can't be ranked.")
+                                }
+                            }
+                            else -> Text("")
+                        }
+                    }
+                }
+            }
             item { Text("Review", style = MaterialTheme.typography.titleMedium) }
             items(review) { item ->
                 QuestionCard(q = item.q, picked = item.picked ?: item.q.answer.firstOrNull(), showAnswer = true, onPick = {})
@@ -210,7 +243,7 @@ fun HistoryScreen(repo: Repository, onBack: () -> Unit) {
     val results by repo.results.collectAsStateWithLifecycle(initialValue = emptyList())
     Scaffold(topBar = { BackBar("My results", onBack) }) { pad ->
         if (results.isEmpty()) {
-            Column(Modifier.padding(pad).padding(24.dp)) { Text("No exams taken yet.") }
+            Column(Modifier.padding(pad).padding(24.dp)) { Text("No exams taken yet. Results are kept for 7 days.") }
         } else {
             LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(results) { r ->

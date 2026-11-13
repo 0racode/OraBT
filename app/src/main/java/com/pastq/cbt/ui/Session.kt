@@ -1,6 +1,8 @@
 package com.pastq.cbt.ui
 
 import com.pastq.cbt.data.QuestionEntity
+import com.pastq.cbt.data.ScoreStatus
+import kotlinx.coroutines.flow.MutableStateFlow
 
 data class ExamConfig(
     val title: String,
@@ -32,6 +34,7 @@ object Session {
     var examConfig: ExamConfig? = null
     var review: List<ReviewItem> = emptyList()
     var outcome: ExamOutcome? = null
+    val scoreStatus = MutableStateFlow<ScoreStatus>(ScoreStatus.Idle)
 }
 
 fun formatTime(totalSeconds: Int): String {
