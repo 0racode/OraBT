@@ -11,10 +11,6 @@ on:
         description: "Extra paths to look at, space separated (optional)"
         required: false
         default: ""
-  push:
-    paths:
-      - ".github/workflows/probe.yml"
-      - "tools/probe.sh"
 
 jobs:
   probe:
@@ -25,4 +21,5 @@ jobs:
         env:
           SITE: ${{ github.event.inputs.site || 'https://myschool.ng' }}
           PATHS: ${{ github.event.inputs.paths }}
+          TEXTLEN: "6000"
         run: bash tools/probe.sh
