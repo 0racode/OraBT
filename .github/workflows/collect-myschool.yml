@@ -19,6 +19,9 @@ on:
         required: true
         default: "20"
 
+permissions:
+  contents: write
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -33,8 +36,16 @@ jobs:
           YEARS: ${{ github.event.inputs.years }}
           MAX_MINUTES: ${{ github.event.inputs.max_minutes }}
         run: python tools/collect_myschool.py
-      - uses: actions/upload-artifact@v4
+      - name: Save results on the data branch
         if: always()
-        with:
-          name: myschool-${{ github.run_id }}
-          path: out/myschool.jsonl
+        run: |
+          set -e
+          cp out/myschool.jsonl /tmp/result.jsonl
+          git config user.name "collector"; git config user.email "collector@users.noreply.github.com"
+          git fetch origin collected || true
+          if git rev-parse --verify origin/collected >/dev/null 2>&1; then git checkout -B collected origin/collected; else git checkout --orphan collected; git rm -rf . >/dev/null 2>&1 || true; fi
+          mkdir -p myschool
+          cp /tmp/result.jsonl "myschool/run-${{ github.run_id }}.jsonl"
+          git add myschool
+          git commit -m "MySchool collection run ${{ github.run_id }}"
+          git push origin collected
