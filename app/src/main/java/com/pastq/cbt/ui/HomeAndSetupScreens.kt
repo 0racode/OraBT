@@ -153,7 +153,7 @@ fun HomeScreen(
 fun PracticeSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Unit) {
     val counts by repo.subjectCounts.collectAsStateWithLifecycle(initialValue = emptyList())
     var subject by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("") }
+    var selectedTypes by remember { mutableStateOf(setOf<String>()) }
     var year by remember { mutableStateOf("") }
     var types by remember { mutableStateOf(emptyList<String>()) }
     var years by remember { mutableStateOf(emptyList<String>()) }
@@ -162,7 +162,7 @@ fun PracticeSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Uni
     var fetching by remember { mutableStateOf(false) }
 
     LaunchedEffect(subject) {
-        type = ""; year = ""
+        selectedTypes = emptySet(); year = ""
         if (subject.isNotEmpty()) {
             types = repo.types(subject)
             years = repo.years(subject)
@@ -201,7 +201,7 @@ fun PracticeSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Uni
                         enabled = subject.isNotEmpty(),
                         onClick = {
                             Session.practiceSubject = subject
-                            Session.practiceType = type
+                            Session.practiceType = selectedTypes.sorted().joinToString(",")
                             Session.practiceYear = year
                             onStart()
                         },
@@ -215,11 +215,15 @@ fun PracticeSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Uni
             if (subject.isNotEmpty()) {
                 // Filters sit above the list so they are always in view once a subject is chosen.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Exam type", style = MaterialTheme.typography.labelLarge)
+                    Text("Exam bodies (tap one or more)", style = MaterialTheme.typography.labelLarge)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = type == "", onClick = { type = "" }, label = { Text("Any") })
+                        FilterChip(selected = selectedTypes.isEmpty(), onClick = { selectedTypes = emptySet() }, label = { Text("All") })
                         types.forEach { t ->
-                            FilterChip(selected = type == t, onClick = { type = t }, label = { Text(t.uppercase()) })
+                            FilterChip(
+                                selected = t in selectedTypes,
+                                onClick = { selectedTypes = if (t in selectedTypes) selectedTypes - t else selectedTypes + t },
+                                label = { Text(t.uppercase()) },
+                            )
                         }
                     }
                     Text("Year", style = MaterialTheme.typography.labelLarge)

@@ -61,3 +61,14 @@ The new questions are marked unchecked, so the nightly AI answer check covers th
 - aliuoluyemi7-prog/ExamWiseNG: 798 questions imported on 2026-11-14 after the author's verbal permission
   (educational use only, no commercial use). Credit and the condition are in THIRD_PARTY.md.
   TODO: get the permission confirmed in writing (WhatsApp/SMS screenshot is enough).
+
+## Next (agreed 2026-11-15)
+1. Import the MySchool JAMB 2021-2025 collection (map jamb->utme, dedupe by question text), credit + link in the app.
+2. Collect MySchool WAEC and NECO after the JAMB run finishes (sequential, polite).
+3. Other sites checked: WAECONLINE (landing page only), Nigerian Scholars/Ulearngo (questions only inside their apps),
+   Erudites (news site). No public past-question pages found, so MySchool is the only web source for now.
+4. Study mode: pick several exam bodies at once - done (multi-select chips).
+5. Question images: collector keeps image URLs, app shows them with Coil and caches on the phone. MySchool-hosted images
+   are loaded from their server once and cached; consider mirroring if their bandwidth is a concern.
+6. Live-session notifications (last): choose between a Firebase push (instant, needs a Firebase project) and a
+   background check every ~15 minutes (no Firebase, delayed).

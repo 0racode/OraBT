@@ -34,12 +34,13 @@ interface QuestionDao {
     @Query("SELECT DISTINCT year FROM questions WHERE subject = :subject AND year != '' ORDER BY year DESC")
     suspend fun years(subject: String): List<String>
 
-    /** Practice list: empty-string filter means "any". */
+    /** Practice list: empty-string filter means "any". [types] is a comma-separated list such as "utme,wassce". */
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
-            "AND (:type = '' OR type = :type) AND (:year = '' OR year = :year) ORDER BY RANDOM()"
+            "AND (:types = '' OR instr(',' || :types || ',', ',' || type || ',') > 0) " +
+            "AND (:year = '' OR year = :year) ORDER BY RANDOM()"
     )
-    suspend fun practice(subject: String, type: String, year: String): List<QuestionEntity>
+    suspend fun practice(subject: String, types: String, year: String): List<QuestionEntity>
 
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
