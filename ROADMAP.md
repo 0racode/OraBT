@@ -47,3 +47,13 @@ Built in batches. Each batch is pushed, built by GitHub Actions and published as
 - Admin can review disputed questions and set the correct key (stored as `confirmed`).
 - Known gap: a corrected key is fixed in the cloud library (used for scores and live sessions); phones that
   already bundled the old key pick it up only after the next library refresh.
+
+## Batch E (more question banks) - done
+Searched GitHub for Nigerian exam question banks. Findings:
+- ALIYUAAM10/NAIJAPREP (MIT): 150 original practice questions with explanations -> merged (type "practice";
+  adds Agricultural Science and Further Mathematics). Credit in THIRD_PARTY.md.
+- Japhethca/past-questions-api (MIT): code only, no question data.
+- croniesng/Sdashapi: docs for a hosted paid API; no data in the repo.
+- aliuoluyemi7-prog/ExamWiseNG: CSV questions but no licence, so not reusable without the author's permission.
+- brandnova/PastQ-CBT and similar: front-ends over the same ALOC data we already have.
+The new questions are marked unchecked, so the nightly AI answer check covers them too.
