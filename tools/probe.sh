@@ -24,8 +24,10 @@ PY
 import re
 h=open('x.html',encoding='utf-8',errors='replace').read()
 h=re.sub(r'<svg.*?</svg>','',h,flags=re.S); h=re.sub(r'<path[^>]*>','',h)
-i=h.find('Correct Option')
-print(h[max(0,i-4500):i+300] if i>=0 else 'Correct Option not found')
+import os
+needle=os.environ.get('NEEDLE','Correct Option')
+i=h.find(needle)
+print(h[max(0,i-int(os.environ.get('BEFORE','600'))):i+int(os.environ.get('AFTER','2600'))] if i>=0 else needle+' not found')
 PY
   fi
   echo "--- api-like strings"; grep -oE 'https?://[a-zA-Z0-9./_-]*(api|json|graphql)[a-zA-Z0-9./_?=&-]*' x.html | sort -u | head -15
