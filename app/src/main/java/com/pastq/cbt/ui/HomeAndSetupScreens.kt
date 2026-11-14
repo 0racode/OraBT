@@ -115,6 +115,7 @@ fun HomeScreen(
         repo.ensureSeeded()
         repo.pruneOldResults()
         seeding = false
+        repo.autoRefreshReviewStatus()
     }
     Scaffold { pad ->
         Column(

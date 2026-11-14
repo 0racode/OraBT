@@ -17,10 +17,16 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE questions ADD COLUMN reviewStatus TEXT NOT NULL DEFAULT 'unchecked'")
+    }
+}
+
 class CbtApplication : Application() {
     val repository: Repository by lazy {
         val db = Room.databaseBuilder(this, AppDatabase::class.java, "pastq.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
         Repository(this, db)
     }

@@ -77,6 +77,7 @@ fun QuestionCard(
                 color = MaterialTheme.colorScheme.tertiary,
             )
             if (q.solution.isNotBlank()) Text(q.solution, style = MaterialTheme.typography.bodyMedium)
+            if (q.solution.trim().length < 20) ExplanationBox(q)
         }
     }
 }

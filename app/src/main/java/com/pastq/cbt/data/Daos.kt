@@ -16,10 +16,16 @@ interface QuestionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<QuestionEntity>)
 
+    @Query("UPDATE questions SET reviewStatus = 'ok' WHERE reviewStatus = 'disputed'")
+    suspend fun clearDisputed()
+
+    @Query("UPDATE questions SET reviewStatus = 'disputed' WHERE id IN (:ids)")
+    suspend fun markDisputed(ids: List<String>)
+
     @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
     suspend fun countFor(subject: String): Int
 
-    @Query("SELECT subject, COUNT(*) AS count FROM questions GROUP BY subject ORDER BY subject")
+    @Query("SELECT subject, COUNT(*) AS count FROM questions WHERE reviewStatus != 'disputed' GROUP BY subject ORDER BY subject")
     fun subjectCounts(): Flow<List<SubjectCount>>
 
     @Query("SELECT DISTINCT type FROM questions WHERE subject = :subject AND type != '' ORDER BY type")
@@ -31,12 +37,14 @@ interface QuestionDao {
     /** Practice list: empty-string filter means "any". */
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
+            "AND reviewStatus != 'disputed' " +
             "AND (:type = '' OR type = :type) AND (:year = '' OR year = :year) ORDER BY RANDOM()"
     )
     suspend fun practice(subject: String, type: String, year: String): List<QuestionEntity>
 
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
+            "AND reviewStatus != 'disputed' " +
             "AND (:type = '' OR type = :type) ORDER BY RANDOM() LIMIT :limit"
     )
     suspend fun random(subject: String, type: String, limit: Int): List<QuestionEntity>
@@ -54,7 +62,7 @@ interface ResultDao {
     fun all(): Flow<List<ExamResultEntity>>
 }
 
-@Database(entities = [QuestionEntity::class, ExamResultEntity::class], version = 2, exportSchema = false)
+@Database(entities = [QuestionEntity::class, ExamResultEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun questions(): QuestionDao
     abstract fun results(): ResultDao

@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /** One past question. [id] is "<subjectKey>-<number>", e.g. "chemistry-12". */
@@ -22,6 +23,8 @@ data class QuestionEntity(
     val solution: String = "",
     val type: String = "",
     val year: String = "",
+    /** Result of the AI answer-key check: unchecked, ok, disputed, unverifiable or confirmed. */
+    @SerialName("review_status") @ColumnInfo(defaultValue = "'unchecked'") val reviewStatus: String = "unchecked",
 ) {
     fun optionText(letter: Char): String = when (letter) {
         'a' -> a

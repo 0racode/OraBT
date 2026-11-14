@@ -101,6 +101,37 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
+    /**
+     * Downloads the (small) list of questions whose answer key the AI check disputes and hides them
+     * on this device. Ids only, so it costs very little data.
+     */
+    suspend fun refreshReviewStatus() = withContext(Dispatchers.IO) {
+        val key = com.pastq.cbt.BuildConfig.SUPABASE_KEY
+        val ids = mutableListOf<String>()
+        var offset = 0
+        while (true) {
+            val page = CloudApi.service.disputedIds(key, "Bearer $key", limit = 1000, offset = offset)
+            ids += page.map { it.id }
+            if (page.size < 1000) break
+            offset += 1000
+        }
+        qDao.clearDisputed()
+        ids.chunked(500).forEach { qDao.markDisputed(it) }
+    }
+
+    /** Runs [refreshReviewStatus] at most once a day, quietly. */
+    suspend fun autoRefreshReviewStatus() {
+        val prefs = context.getSharedPreferences("sync", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong("review_ts", 0L) < 24L * 60 * 60 * 1000) return
+        try {
+            refreshReviewStatus()
+            prefs.edit().putLong("review_ts", now).apply()
+        } catch (e: Exception) {
+            // Offline or server unavailable: try again next launch.
+        }
+    }
+
     /** Personal test history is kept for 7 days. */
     suspend fun pruneOldResults() = withContext(Dispatchers.IO) {
         rDao.deleteBefore(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)

@@ -28,6 +28,24 @@ data class SyncReply(
 )
 
 interface CloudService {
+    @POST("functions/v1/explain-question")
+    suspend fun explain(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Body body: ExplainRequest,
+    ): ExplainReply
+
+    @GET("rest/v1/pastq_questions")
+    suspend fun disputedIds(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Query("select") select: String = "id",
+        @Query("review_status") status: String = "eq.disputed",
+        @Query("order") order: String = "id",
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): List<IdOnly>
+
     @POST("functions/v1/pastq-auth")
     suspend fun account(
         @Header("apikey") key: String,
