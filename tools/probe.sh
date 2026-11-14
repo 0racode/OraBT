@@ -18,5 +18,15 @@ m=re.search(r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>',h,re.S) or re.
 print((m.group(1) if m else 'none found')[:int(os.environ.get('NUXTLEN','5000'))])
 PY
   fi
+  if [ -n "${SNIPPET:-}" ]; then
+    echo "--- raw HTML around the answer (svg removed)"
+    python3 - <<'PY'
+import re
+h=open('x.html',encoding='utf-8',errors='replace').read()
+h=re.sub(r'<svg.*?</svg>','',h,flags=re.S); h=re.sub(r'<path[^>]*>','',h)
+i=h.find('Correct Option')
+print(h[max(0,i-4500):i+300] if i>=0 else 'Correct Option not found')
+PY
+  fi
   echo "--- api-like strings"; grep -oE 'https?://[a-zA-Z0-9./_-]*(api|json|graphql)[a-zA-Z0-9./_?=&-]*' x.html | sort -u | head -15
 done
