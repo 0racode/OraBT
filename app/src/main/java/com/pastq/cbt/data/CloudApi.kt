@@ -67,6 +67,14 @@ interface CloudService {
         @Body body: SubmitRequest,
     ): SubmitReply
 
+    @POST("functions/v1/pastq-live")
+    suspend fun live(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Header("x-admin-token") admin: String?,
+        @Body body: kotlinx.serialization.json.JsonObject,
+    ): kotlinx.serialization.json.JsonObject
+
     @POST("functions/v1/sync-aloc")
     suspend fun syncAloc(
         @Header("apikey") key: String,

@@ -34,3 +34,16 @@ Built in batches. Each batch is pushed, built by GitHub Actions and published as
 
 ## Batch E: more question banks
 - Search public repositories for additional past-question banks and merge the usable ones (check licences first)
+
+
+## Batch D (live sessions) - built
+- Server: tables pastq_live_sessions/items/players, admin check via pgcrypto, edge function `pastq-live`
+  (join, state, submit, results, admin_*). Questions are snapshotted into the session; grading is server side.
+- Sessions, players and results are deleted 7 days after a session ends (daily cron).
+- Admin sign-in is checked on the server (name Oracle or the admin email); the password is not in the app or repo.
+  The admin token lives in memory only and expires after 12 hours; 5 wrong tries lock the IP for 15 minutes.
+- Admin can draw questions from the verified bank, or paste/type their own (AI tidies and adds options only to
+  pasted questions; the admin confirms every correct answer).
+- Admin can review disputed questions and set the correct key (stored as `confirmed`).
+- Known gap: a corrected key is fixed in the cloud library (used for scores and live sessions); phones that
+  already bundled the old key pick it up only after the next library refresh.

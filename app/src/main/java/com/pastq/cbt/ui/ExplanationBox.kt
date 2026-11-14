@@ -34,16 +34,19 @@ private sealed interface ExplainState {
 
 /** "Explain this answer" for one question. The explanation comes from the AI tutor but only for questions in the bank. */
 @Composable
-fun ExplanationBox(q: QuestionEntity) {
-    var state by remember(q.id) {
-        mutableStateOf<ExplainState>(Explainer.cached(q.id)?.let { ExplainState.Done(it) } ?: ExplainState.Idle)
+fun ExplanationBox(q: QuestionEntity) = ExplanationBox(q.id)
+
+@Composable
+fun ExplanationBox(id: String) {
+    var state by remember(id) {
+        mutableStateOf<ExplainState>(Explainer.cached(id)?.let { ExplainState.Done(it) } ?: ExplainState.Idle)
     }
-    var requested by remember(q.id) { mutableStateOf(0) }
+    var requested by remember(id) { mutableStateOf(0) }
 
     LaunchedEffect(requested) {
         if (requested == 0) return@LaunchedEffect
         state = ExplainState.Loading
-        state = Explainer.fetch(q.id).fold(
+        state = Explainer.fetch(id).fold(
             onSuccess = { ExplainState.Done(it) },
             onFailure = { ExplainState.Failed(it.message ?: "Could not get an explanation.") },
         )

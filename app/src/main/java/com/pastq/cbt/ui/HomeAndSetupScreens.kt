@@ -69,7 +69,7 @@ fun BackBar(title: String, onBack: () -> Unit) {
 
 /** Fixed bar pinned to the bottom of a screen, so the main action never needs scrolling to. */
 @Composable
-private fun BottomActionBar(content: @Composable () -> Unit) {
+fun BottomActionBar(content: @Composable () -> Unit) {
     Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -107,6 +107,7 @@ fun HomeScreen(
     onDownload: () -> Unit,
     onLeaderboard: () -> Unit,
     onAccount: () -> Unit,
+    onLive: () -> Unit,
 ) {
     val account by AuthManager.account.collectAsStateWithLifecycle()
     val counts by repo.subjectCounts.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -139,6 +140,7 @@ fun HomeScreen(
                         Text(if (account == null) "Sign in" else "Profile")
                     }
                 }
+                OutlinedButton(onClick = onLive, modifier = Modifier.fillMaxWidth()) { Text("Join a live test") }
                 OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("My results") }
                 OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Download more questions") }
             }
@@ -241,7 +243,7 @@ fun PracticeSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Uni
 
 /** Hours + minutes typed by the user. Valid range is 1 minute to 2 hours. */
 @Composable
-private fun DurationInput(
+fun DurationInput(
     hours: String,
     mins: String,
     onHours: (String) -> Unit,

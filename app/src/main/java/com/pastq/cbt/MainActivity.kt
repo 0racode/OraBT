@@ -17,6 +17,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.pastq.cbt.ui.AccountScreen
+import com.pastq.cbt.ui.AdminCreateScreen
+import com.pastq.cbt.ui.AdminDisputedScreen
+import com.pastq.cbt.ui.AdminHomeScreen
+import com.pastq.cbt.ui.AdminLoginScreen
+import com.pastq.cbt.ui.AdminResultsScreen
+import com.pastq.cbt.ui.LiveJoinScreen
+import com.pastq.cbt.ui.LivePlayScreen
 import com.pastq.cbt.ui.DownloadScreen
 import com.pastq.cbt.ui.LeaderboardScreen
 import com.pastq.cbt.update.Updater
@@ -47,8 +54,38 @@ class MainActivity : ComponentActivity() {
                                 onDownload = { nav.navigate("download") },
                                 onLeaderboard = { nav.navigate("leaderboard") },
                                 onAccount = { nav.navigate("account") },
+                                onLive = { nav.navigate("liveJoin") },
                             )
                         }
+                        composable("liveJoin") {
+                            LiveJoinScreen(
+                                onBack = { nav.popBackStack() },
+                                onJoined = { nav.navigate("livePlay") },
+                                onAdmin = { nav.navigate("adminLogin") },
+                            )
+                        }
+                        composable("livePlay") { LivePlayScreen(onBack = { nav.popBackStack() }) }
+                        composable("adminLogin") {
+                            AdminLoginScreen(
+                                onBack = { nav.popBackStack() },
+                                onLoggedIn = { nav.navigate("adminHome") { popUpTo("adminLogin") { inclusive = true } } },
+                            )
+                        }
+                        composable("adminHome") {
+                            AdminHomeScreen(
+                                onBack = { nav.popBackStack("liveJoin", inclusive = false) },
+                                onCreate = { nav.navigate("adminCreate") },
+                                onResults = { nav.navigate("adminResults/$it") },
+                                onDisputed = { nav.navigate("adminDisputed") },
+                            )
+                        }
+                        composable("adminCreate") {
+                            AdminCreateScreen(repo, onBack = { nav.popBackStack() }, onCreated = { nav.popBackStack() })
+                        }
+                        composable("adminResults/{id}") { entry ->
+                            AdminResultsScreen(entry.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
+                        }
+                        composable("adminDisputed") { AdminDisputedScreen(onBack = { nav.popBackStack() }) }
                         composable("practiceSetup") {
                             PracticeSetupScreen(repo, onStart = { nav.navigate("practice") }, onBack = { nav.popBackStack() })
                         }
