@@ -25,7 +25,7 @@ interface QuestionDao {
     @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
     suspend fun countFor(subject: String): Int
 
-    @Query("SELECT subject, COUNT(*) AS count FROM questions WHERE reviewStatus != 'disputed' GROUP BY subject ORDER BY subject")
+    @Query("SELECT subject, COUNT(*) AS count FROM questions GROUP BY subject ORDER BY subject")
     fun subjectCounts(): Flow<List<SubjectCount>>
 
     @Query("SELECT DISTINCT type FROM questions WHERE subject = :subject AND type != '' ORDER BY type")
@@ -37,14 +37,12 @@ interface QuestionDao {
     /** Practice list: empty-string filter means "any". */
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
-            "AND reviewStatus != 'disputed' " +
             "AND (:type = '' OR type = :type) AND (:year = '' OR year = :year) ORDER BY RANDOM()"
     )
     suspend fun practice(subject: String, type: String, year: String): List<QuestionEntity>
 
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
-            "AND reviewStatus != 'disputed' " +
             "AND (:type = '' OR type = :type) ORDER BY RANDOM() LIMIT :limit"
     )
     suspend fun random(subject: String, type: String, limit: Int): List<QuestionEntity>
