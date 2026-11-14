@@ -1,0 +1,40 @@
+name: Collect MySchool questions
+# Written permission from MySchool: free educational app, credit + link to myschool.ng, remove on request.
+# Slow on purpose: one request every few seconds, honest User-Agent, stops after max_minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      subjects:
+        description: "Subject slugs, space separated (e.g. biology chemistry)"
+        required: true
+      exam_types:
+        description: "jamb, waec, neco (space separated)"
+        required: true
+        default: "jamb"
+      years:
+        description: "Years, space separated"
+        required: true
+      max_minutes:
+        description: "Stop after this many minutes"
+        required: true
+        default: "20"
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests beautifulsoup4
+      - name: Collect
+        env:
+          SUBJECTS: ${{ github.event.inputs.subjects }}
+          EXAM_TYPES: ${{ github.event.inputs.exam_types }}
+          YEARS: ${{ github.event.inputs.years }}
+          MAX_MINUTES: ${{ github.event.inputs.max_minutes }}
+        run: python tools/collect_myschool.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: myschool-${{ github.run_id }}
+          path: out/myschool.jsonl
