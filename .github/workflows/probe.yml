@@ -23,7 +23,7 @@ jobs:
           PATHS: ${{ github.event.inputs.paths }}
           TEXTLEN: "2500"
           SNIPPET: "1"
-          NEEDLE: "grows on another plant"
-          BEFORE: "700"
-          AFTER: "2600"
+          NEEDLE: "an epiphyte"
+          BEFORE: "1500"
+          AFTER: "700"
         run: bash tools/probe.sh
