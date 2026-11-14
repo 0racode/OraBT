@@ -9,5 +9,14 @@ for p in $PATHS; do
   grep -o '<title>[^<]*' x.html | head -1
   echo "--- text (first ${TEXTLEN:-3500} chars)"; strip x.html | head -c "${TEXTLEN:-3500}"; echo
   echo "--- internal links"; grep -oE 'href="/[^"#]*"' x.html | sed 's/href=//' | tr -d '"' | grep -v '^/_nuxt' | sort -u | head -60
+  if [ -n "${DUMP_NUXT:-}" ]; then
+    echo "--- embedded data (__NUXT_DATA__ / window.__NUXT__), first ${NUXTLEN:-5000} chars"
+    python3 - <<'PY'
+import re,os
+h=open('x.html',encoding='utf-8',errors='replace').read()
+m=re.search(r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>',h,re.S) or re.search(r'window\.__NUXT__\s*=\s*(.*?)</script>',h,re.S)
+print((m.group(1) if m else 'none found')[:int(os.environ.get('NUXTLEN','5000'))])
+PY
+  fi
   echo "--- api-like strings"; grep -oE 'https?://[a-zA-Z0-9./_-]*(api|json|graphql)[a-zA-Z0-9./_?=&-]*' x.html | sort -u | head -15
 done

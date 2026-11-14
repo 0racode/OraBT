@@ -21,5 +21,7 @@ jobs:
         env:
           SITE: ${{ github.event.inputs.site || 'https://myschool.ng' }}
           PATHS: ${{ github.event.inputs.paths }}
-          TEXTLEN: "6000"
+          TEXTLEN: "2500"
+          DUMP_NUXT: "1"
+          NUXTLEN: "6000"
         run: bash tools/probe.sh
