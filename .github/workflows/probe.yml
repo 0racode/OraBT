@@ -1,0 +1,28 @@
+name: Probe site (read only)
+# Looks at a site's robots.txt, terms page and page layout so a collector can be written properly.
+# Fetches only a handful of pages, slowly, with an honest User-Agent.
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Site root, e.g. https://myschool.ng"
+        required: true
+      paths:
+        description: "Extra paths to look at, space separated (optional)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - ".github/workflows/probe.yml"
+      - "tools/probe.sh"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe
+        env:
+          SITE: ${{ github.event.inputs.site || 'https://myschool.ng' }}
+          PATHS: ${{ github.event.inputs.paths }}
+        run: bash tools/probe.sh
