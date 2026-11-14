@@ -57,3 +57,7 @@ Searched GitHub for Nigerian exam question banks. Findings:
 - aliuoluyemi7-prog/ExamWiseNG: CSV questions but no licence, so not reusable without the author's permission.
 - brandnova/PastQ-CBT and similar: front-ends over the same ALOC data we already have.
 The new questions are marked unchecked, so the nightly AI answer check covers them too.
+
+- aliuoluyemi7-prog/ExamWiseNG: 798 questions imported on 2026-11-14 after the author's verbal permission
+  (educational use only, no commercial use). Credit and the condition are in THIRD_PARTY.md.
+  TODO: get the permission confirmed in writing (WhatsApp/SMS screenshot is enough).
