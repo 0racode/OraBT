@@ -158,7 +158,7 @@ fun HomeScreen(
                 OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("My results") }
                 OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Download more questions") }
                 Text(
-                    "Past questions courtesy of MySchool (myschool.ng), ALOC, NaijaPrep and ExamWiseNG. PastQ CBT is free and has no ads.",
+                    "Past questions courtesy of MySchool (myschool.ng), Nigerianscholar (Ulearngo, app.ulearngo.com), ALOC, NaijaPrep and ExamWiseNG. PastQ CBT is free and has no ads.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

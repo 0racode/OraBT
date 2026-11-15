@@ -43,3 +43,9 @@ year; explanations are MySchool's own where they exist. Duplicates of questions 
 
 ## ALOC past questions
 Used with the permission of the data owner (see README).
+
+## Nigerianscholar (Ulearngo)
+Written permission (email from permissions@nigerianscholars.com) for bulk extraction of their full question banks and
+answer keys, to be shared with the app developer and included in this free (no ads, no fees) app. Conditions: clear credit
+to Nigerianscholar (Ulearngo) with a link to https://app.ulearngo.com, and the content is removed on request. Keep the
+original email with the project records. No Ulearngo questions have been imported yet.
