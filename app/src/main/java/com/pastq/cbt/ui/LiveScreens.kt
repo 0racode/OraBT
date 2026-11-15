@@ -128,6 +128,8 @@ fun LivePlayScreen(onBack: () -> Unit) {
     var state by remember { mutableStateOf<LiveState?>(null) }
     var results by remember { mutableStateOf<LiveResults?>(null) }
     var questions by remember { mutableStateOf<List<LiveItem>>(emptyList()) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(questions) { QuestionImages.prefetch(ctx, questions.map { it.image }) }
     var error by remember { mutableStateOf<String?>(null) }
     var deadline by remember { mutableLongStateOf(0L) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -405,6 +407,7 @@ fun ReviewCard(item: LiveItem) {
                 Text(item.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(item.question, style = MaterialTheme.typography.titleSmall)
+            QuestionImage(item.image)
             listOf('a', 'b', 'c', 'd').forEach { letter ->
                 val text = item.optionText(letter)
                 if (text.isBlank()) return@forEach

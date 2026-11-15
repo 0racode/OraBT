@@ -52,6 +52,8 @@ import java.util.Date
 @Composable
 fun PracticeScreen(repo: Repository, onBack: () -> Unit) {
     val vm: PracticeViewModel = viewModel(factory = viewModelFactory { initializer { PracticeViewModel(repo) } })
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(vm.questions) { QuestionImages.prefetch(ctx, vm.questions.map { it.image }) }
     Scaffold(topBar = { BackBar(Session.practiceSubject, onBack) }) { pad ->
         when {
             vm.loading -> Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -102,6 +104,8 @@ private fun NumberCell(n: Int, current: Boolean, answered: Boolean, onClick: () 
 @Composable
 fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
     val vm: ExamViewModel = viewModel(factory = viewModelFactory { initializer { ExamViewModel(repo) } })
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(vm.questions) { QuestionImages.prefetch(ctx, vm.questions.map { it.image }) }
     var confirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.finished) { if (vm.finished) onFinished() }

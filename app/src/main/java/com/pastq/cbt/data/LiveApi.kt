@@ -30,6 +30,7 @@ data class LiveItem(
     val d: String = "",
     val answer: String = "",
     val explanation: String = "",
+    val image: String = "",
     val picked: String? = null,
 ) {
     fun optionText(letter: Char): String = when (letter) {
@@ -42,7 +43,7 @@ data class LiveItem(
     /** The same question shaped like a bank question, so the normal question card can show it. */
     fun asQuestion() = QuestionEntity(
         id = qid ?: "live-$pos", subject = subject, question = question,
-        a = a, b = b, c = c, d = d, answer = answer, section = section,
+        a = a, b = b, c = c, d = d, answer = answer, section = section, image = image,
     )
 }
 
@@ -151,6 +152,7 @@ data class DisputedItem(
     val d: String = "",
     val answer: String = "",
     val section: String = "",
+    val image: String = "",
     val ai_answer: String? = null,
     val ai_explanation: String? = null,
 )

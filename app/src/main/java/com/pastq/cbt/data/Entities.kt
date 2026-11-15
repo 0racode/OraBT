@@ -25,6 +25,8 @@ data class QuestionEntity(
     val year: String = "",
     /** Result of the AI answer-key check: unchecked, ok, disputed, unverifiable or confirmed. */
     @SerialName("review_status") @ColumnInfo(defaultValue = "'unchecked'") val reviewStatus: String = "unchecked",
+    /** Picture URL(s) for questions that need a diagram, one per line. */
+    @ColumnInfo(defaultValue = "''") val image: String = "",
 ) {
     fun optionText(letter: Char): String = when (letter) {
         'a' -> a

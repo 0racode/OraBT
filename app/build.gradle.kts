@@ -98,4 +98,7 @@ dependencies {
     // Push notices for live sessions
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-messaging")
+
+    // Question pictures (diagrams, graphs) with an on-phone cache
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }

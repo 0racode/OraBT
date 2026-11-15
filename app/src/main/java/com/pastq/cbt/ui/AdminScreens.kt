@@ -419,6 +419,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         Text("${q.subject} · ${q.id}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         if (q.section.isNotBlank()) Text(q.section, style = MaterialTheme.typography.bodySmall)
                         Text(q.question, style = MaterialTheme.typography.titleSmall)
+                        QuestionImage(q.image)
                         listOf('a' to q.a, 'b' to q.b, 'c' to q.c, 'd' to q.d).forEach { (l, text) ->
                             val tags = listOfNotNull(
                                 if (q.answer == l.toString()) "stored key" else null,

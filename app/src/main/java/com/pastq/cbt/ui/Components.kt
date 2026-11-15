@@ -40,6 +40,7 @@ fun QuestionCard(
             Text(q.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(q.question, style = MaterialTheme.typography.titleMedium)
+        QuestionImage(q.image)
 
         listOf('a', 'b', 'c', 'd').forEach { letter ->
             val text = q.optionText(letter)
