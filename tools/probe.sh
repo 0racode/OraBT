@@ -30,5 +30,14 @@ i=h.find(needle)
 print(h[max(0,i-int(os.environ.get('BEFORE','600'))):i+int(os.environ.get('AFTER','2600'))] if i>=0 else needle+' not found')
 PY
   fi
+  if [ -n "${IMGS:-}" ]; then
+    echo "--- all img tags with 220 chars of context before"
+    python3 - <<'PY'
+import re
+h=open('x.html',encoding='utf-8',errors='replace').read()
+for m in re.finditer(r'<img[^>]*>',h):
+    print('CONTEXT:',re.sub(r'\s+',' ',h[max(0,m.start()-220):m.start()])[-220:]); print('IMG:',m.group(0)[:300]); print()
+PY
+  fi
   echo "--- api-like strings"; grep -oE 'https?://[a-zA-Z0-9./_-]*(api|json|graphql)[a-zA-Z0-9./_?=&-]*' x.html | sort -u | head -15
 done

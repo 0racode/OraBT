@@ -22,7 +22,8 @@ jobs:
           SITE: ${{ github.event.inputs.site || 'https://myschool.ng' }}
           PATHS: ${{ github.event.inputs.paths }}
           TEXTLEN: "2500"
-          SNIPPET: "1"
+          SNIPPET: ""
+          IMGS: "1"
           NEEDLE: "an epiphyte"
           BEFORE: "1500"
           AFTER: "700"
