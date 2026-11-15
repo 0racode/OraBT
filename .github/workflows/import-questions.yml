@@ -1,0 +1,21 @@
+name: Import collected questions
+# Temporary helper: asks the project's import function to load a collected MySchool file (duplicates skipped).
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "File name on the collected branch, e.g. run-123.jsonl"
+        required: true
+      dry:
+        description: "true = count only"
+        required: true
+        default: "true"
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -sS -m 300 -X POST "https://wyzswbklytklzbcmihsh.supabase.co/functions/v1/pastq-import" \
+            -H "apikey: sb_publishable_E21JIx3tbNTX9K3bhR6Ieg_fZRL1xqj" -H "Content-Type: application/json" \
+            -d "{\"file\":\"${{ github.event.inputs.file }}\",\"dry\":${{ github.event.inputs.dry }}}" | tee out.json
+          echo
