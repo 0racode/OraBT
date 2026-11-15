@@ -17,7 +17,14 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.on("response", lambda r: seen.append((r.request.resource_type, r.request.method, r.status, r.url)) if r.request.resource_type in ("xhr", "fetch") else None)
     page.goto(SITE + "/login", wait_until="domcontentloaded", timeout=60000); time.sleep(6)
-    page.get_by_text("Continue with Email").first.click(); time.sleep(2)
+    print("LOGIN PAGE TEXT:", re.sub(r"\s+", " ", page.inner_text("body"))[:500])
+    print("BUTTONS:", page.eval_on_selector_all("button,a[role=button],[role=button]", "e => e.map(x => (x.innerText||'').trim().slice(0,40))"))
+    print("INPUTS:", page.eval_on_selector_all("input", "e => e.map(x => x.type+'/'+x.name+'/'+x.placeholder)"))
+    try:
+        page.get_by_text("Continue with Email").first.click(timeout=8000); time.sleep(2)
+    except Exception as e:
+        print("no email button click:", str(e)[:100])
+    print("INPUTS AFTER:", page.eval_on_selector_all("input", "e => e.map(x => x.type+'/'+x.name+'/'+x.placeholder)"))
     page.locator("input[type=email], input[name=email]").first.fill(EMAIL)
     pw = page.locator("input[type=password]").first
     pw.fill(PW)
