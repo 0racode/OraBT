@@ -1,0 +1,21 @@
+name: Probe Ulearngo (signed in, read only)
+# Signs in to the Ulearngo web app with the owner's own account (written permission) and looks at ONE page layout.
+on:
+  workflow_dispatch:
+    inputs:
+      paths:
+        description: "Paths to look at, space separated"
+        required: false
+        default: "/past-questions/biology"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install playwright && playwright install --with-deps chromium
+      - name: Probe
+        env:
+          ULEARNGO_EMAIL: ${{ secrets.ULEARNGO_EMAIL }}
+          ULEARNGO_PASSWORD: ${{ secrets.ULEARNGO_PASSWORD }}
+          PATHS: ${{ github.event.inputs.paths }}
+        run: python3 tools/probe_ulearngo.py
