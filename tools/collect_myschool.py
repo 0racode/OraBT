@@ -2,7 +2,9 @@
 """Polite collector for myschool.ng past questions (permission: written, free educational app, credit + link).
 
 Reads the public question pages one at a time, with a delay between requests and an honest User-Agent.
-Writes JSON lines to out/myschool.jsonl. Skips anything with images. Stops after MAX_MINUTES.
+Writes JSON lines to out/myschool.jsonl. Keeps the picture URL of a question (field "image") when the picture sits
+between the question and its options; skips questions whose options are pictures. Stops after MAX_MINUTES.
+IDS_FILE (lines "subject id") collects just those questions and writes only the ones that have a picture.
 """
 import json, os, re, sys, time, urllib.parse
 import requests
@@ -12,9 +14,10 @@ SITE = "https://myschool.ng"
 UA = "PastQ-CBT-research (free educational app; contact via github.com/0racode/OraBT)"
 DELAY = float(os.environ.get("DELAY", "3.5"))
 MAX_MINUTES = float(os.environ.get("MAX_MINUTES", "300"))
-SUBJECTS = os.environ["SUBJECTS"].split()
+IDS_FILE = os.environ.get("IDS_FILE", "")
+SUBJECTS = os.environ.get("SUBJECTS", "").split()
 TYPES = os.environ.get("EXAM_TYPES", "jamb").split()
-YEARS = os.environ["YEARS"].split()
+YEARS = os.environ.get("YEARS", "").split()
 MAX_PAGES = int(os.environ.get("MAX_PAGES", "40"))
 START = time.time()
 S = requests.Session(); S.headers["User-Agent"] = UA
@@ -53,6 +56,18 @@ def list_ids(subject, etype, year):
         if out_of_time(): break
     return ids
 
+def find_images(soup):
+    """Picture(s) belonging to the question: stored under /storage/classroom/ and placed before the first option."""
+    first = soup.select_one("span.uppercase.font-medium")
+    found = list(reversed(first.find_all_previous("img"))) if first else []
+    urls = []
+    for im in found:
+        m = re.search(r"(?:https://myschool\.ng)?/storage/classroom/[^\s,\"']+", (im.get("src") or "") + " " + (im.get("srcset") or ""))
+        if m:
+            u = urllib.parse.urljoin(SITE, m.group(0))
+            if u not in urls: urls.append(u)
+    return urls
+
 def parse(html, subject, qid):
     soup = BeautifulSoup(html, "html.parser")
     h1 = soup.find("h1")
@@ -86,14 +101,25 @@ def parse(html, subject, qid):
     if len(opts) > 4 or "e" in opts:
         stats["skipped_options"] += 1; return None
     return dict(src="myschool", src_id=qid, subject=subject, exam_type=etype, year=year, question=stem,
-                a=opts["a"], b=opts["b"], c=opts["c"], d=opts["d"], answer=ans, explanation=exp)
+                a=opts["a"], b=opts["b"], c=opts["c"], d=opts["d"], answer=ans, explanation=exp,
+                image="\n".join(find_images(soup)))
 
 os.makedirs("out", exist_ok=True)
 done = set()
 if os.path.exists("out/myschool.jsonl"):
     for line in open("out/myschool.jsonl"): done.add(json.loads(line)["src_id"])
 with open("out/myschool.jsonl", "a") as f:
-    for subject in SUBJECTS:
+    if IDS_FILE:
+        pairs = [l.split() for l in open(IDS_FILE) if len(l.split()) == 2]
+        for subject, qid in pairs:
+            if qid in done or out_of_time(): continue
+            html = get(f"{SITE}/classroom/{subject}/{qid}")
+            rec = parse(html, subject, qid) if html else None
+            if rec and rec["image"]:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n"); f.flush()
+                stats["questions"] += 1; done.add(qid)
+    else:
+      for subject in SUBJECTS:
         for etype in TYPES:
             for year in YEARS:
                 if out_of_time(): break

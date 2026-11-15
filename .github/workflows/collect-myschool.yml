@@ -6,14 +6,20 @@ on:
     inputs:
       subjects:
         description: "Subject slugs, space separated (e.g. biology chemistry)"
-        required: true
+        required: false
+        default: ""
       exam_types:
         description: "jamb, waec, neco (space separated)"
         required: true
         default: "jamb"
       years:
         description: "Years, space separated"
-        required: true
+        required: false
+        default: ""
+      ids_file:
+        description: "Optional: file of 'subject id' lines (e.g. tools/ids/jamb.txt) to collect only pictures for those questions"
+        required: false
+        default: ""
       max_minutes:
         description: "Stop after this many minutes"
         required: true
@@ -34,6 +40,7 @@ jobs:
           SUBJECTS: ${{ github.event.inputs.subjects }}
           EXAM_TYPES: ${{ github.event.inputs.exam_types }}
           YEARS: ${{ github.event.inputs.years }}
+          IDS_FILE: ${{ github.event.inputs.ids_file }}
           MAX_MINUTES: ${{ github.event.inputs.max_minutes }}
         run: python tools/collect_myschool.py
       - name: Save results on the data branch
