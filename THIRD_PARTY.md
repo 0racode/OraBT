@@ -51,3 +51,8 @@ to Nigerianscholar (Ulearngo) with a link to https://app.ulearngo.com, and the c
 original email with the project records. Scope clarified by their representative (video call, also sent as text): only questions
 from their web address may be used; content from their mobile apps on the app stores may NOT be used. Keep that text with the
 project records. No Ulearngo questions have been imported yet.
+
+Update (written confirmation from permissions@nigerianscholars.com, subject "Written Confirmation - Access to app.ulearngo.com
+Content"): permitted to collect questions, answers and explanations from the Ulearngo web app at app.ulearngo.com, including
+content that normally needs a sign-in, for this free (no ads, no fees) app, with credit and a link, removable on request.
+Mobile-app content from the app stores remains out of scope. Collect slowly (their robots.txt asks for a 5 second delay).
