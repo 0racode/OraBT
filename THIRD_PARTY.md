@@ -32,5 +32,14 @@ Keep PastQ CBT free of charge and of paid features or advertising while these qu
 if the author asks. Written confirmation from the author should be kept with the project records.
 Changes made: options were shuffled; questions were added to the shared PastQ question library as type "practice".
 
+## MySchool past questions
+Past questions and answers (JAMB/UTME, later WAEC and NECO) copied from https://myschool.ng/ with MySchool's written
+permission for this free educational app. Conditions: the app stays free with no ads or fees, MySchool is credited with a
+link to https://myschool.ng/, and the questions are removed on request. The collector (tools/collect_myschool.py) runs
+slowly with an honest user agent. Questions with images are skipped for now. The written confirmation is kept with the
+project records.
+Changes made: added to the shared PastQ question library with type "utme" (jamb), "wassce" (waec) or "neco" and the exam
+year; explanations are MySchool's own where they exist. Duplicates of questions already in the library were dropped.
+
 ## ALOC past questions
 Used with the permission of the data owner (see README).
