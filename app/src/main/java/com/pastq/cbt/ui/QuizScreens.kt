@@ -2,6 +2,8 @@
 
 package com.pastq.cbt.ui
 
+import androidx.compose.foundation.border
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -89,16 +91,26 @@ fun PracticeScreen(repo: Repository, onBack: () -> Unit) {
 /** Light-weight numbered cell for the question jump grid (cheap enough for 180+ questions). */
 @Composable
 private fun NumberCell(n: Int, current: Boolean, answered: Boolean, onClick: () -> Unit) {
-    val bg = when {
-        current -> MaterialTheme.colorScheme.primary
-        answered -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val fg = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val cs = MaterialTheme.colorScheme
+    // answered = solid fill; not answered = outlined in the warning colour so skipped questions stand out
+    val bg = when { current -> cs.primary; answered -> cs.tertiary; else -> androidx.compose.ui.graphics.Color.Transparent }
+    val fg = when { current -> cs.onPrimary; answered -> cs.onTertiary; else -> cs.error }
+    val shape = RoundedCornerShape(8.dp)
     Box(
-        Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).background(bg).clickable(onClick = onClick),
+        Modifier.size(38.dp).clip(shape).background(bg)
+            .then(if (!answered && !current) Modifier.border(1.5.dp, cs.error, shape) else Modifier)
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text("$n", color = fg, style = MaterialTheme.typography.labelMedium) }
+    ) { Text("$n", color = fg, style = MaterialTheme.typography.labelMedium, fontWeight = if (answered || current) FontWeight.Bold else FontWeight.Normal) }
+}
+
+@Composable
+private fun LegendDot(color: androidx.compose.ui.graphics.Color, outlined: Boolean, label: String) {
+    val shape = RoundedCornerShape(4.dp)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(14.dp).clip(shape).then(if (outlined) Modifier.border(1.5.dp, color, shape) else Modifier.background(color)))
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
 }
 
 @Composable
@@ -153,6 +165,17 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     Text("Jump to", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 16.dp))
+                    Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        LegendDot(MaterialTheme.colorScheme.tertiary, false, "Answered (${vm.answers.size})")
+                        LegendDot(MaterialTheme.colorScheme.error, true, "Not answered (${vm.questions.size - vm.answers.size})")
+                    }
+                    if (vm.answers.size < vm.questions.size) {
+                        TextButton(onClick = {
+                            val n = vm.questions.size
+                            val next = (1..n).map { (vm.index + it) % n }.firstOrNull { vm.answers[it] == null }
+                            if (next != null) vm.index = next
+                        }) { Text("Go to next unanswered") }
+                    }
                     // Grouped by subject so UTME's four subjects are easy to navigate.
                     val subjects = vm.questions.map { it.subject }.distinct()
                     subjects.forEach { subject ->

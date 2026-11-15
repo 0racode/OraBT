@@ -2,6 +2,10 @@
 
 package com.pastq.cbt.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -126,6 +130,16 @@ fun HomeScreen(
         ) {
             UpdateBanner()
             Text("PastQ CBT", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.width(22.dp).height(1.5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)))
+                Text(
+                    "by Oracle",
+                    style = MaterialTheme.typography.titleMedium.copy(letterSpacing = 3.sp),
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                )
+                Box(Modifier.width(22.dp).height(1.5.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)))
+            }
             Text("UTME, WASSCE & Post-UTME past questions", style = MaterialTheme.typography.bodyLarge)
             if (seeding) {
                 CircularProgressIndicator()
