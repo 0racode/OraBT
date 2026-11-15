@@ -22,7 +22,7 @@ MAX_PAGES = int(os.environ.get("MAX_PAGES", "40"))
 START = time.time()
 S = requests.Session(); S.headers["User-Agent"] = UA
 last = [0.0]
-stats = {"requests": 0, "questions": 0, "skipped_image": 0, "skipped_options": 0, "errors": 0}
+stats = {"with_image": 0, "classroom_imgs_on_pages": 0, "requests": 0, "questions": 0, "skipped_image": 0, "skipped_options": 0, "errors": 0}
 
 def out_of_time():
     return (time.time() - START) / 60 > MAX_MINUTES
@@ -58,8 +58,10 @@ def list_ids(subject, etype, year):
 
 def find_images(soup):
     """Picture(s) belonging to the question: stored under /storage/classroom/ and placed before the first option."""
-    first = soup.select_one("span.uppercase.font-medium")
-    found = list(reversed(first.find_all_previous("img"))) if first else []
+    first = None
+    for sp in soup.select("span.uppercase.font-medium"):
+        if sp.get_text(strip=True).lower() == "a": first = sp; break
+    found = list(reversed(first.find_all_previous("img"))) if first else soup.find_all("img")
     urls = []
     for im in found:
         m = re.search(r"(?:https://myschool\.ng)?/storage/classroom/[^\s,\"']+", (im.get("src") or "") + " " + (im.get("srcset") or ""))
@@ -100,9 +102,12 @@ def parse(html, subject, qid):
         return None
     if len(opts) > 4 or "e" in opts:
         stats["skipped_options"] += 1; return None
+    pics = find_images(soup)
+    stats["classroom_imgs_on_pages"] += len([1 for im in soup.find_all("img") if "/storage/classroom/" in ((im.get("src") or "") + (im.get("srcset") or ""))])
+    if pics: stats["with_image"] += 1
     return dict(src="myschool", src_id=qid, subject=subject, exam_type=etype, year=year, question=stem,
                 a=opts["a"], b=opts["b"], c=opts["c"], d=opts["d"], answer=ans, explanation=exp,
-                image="\n".join(find_images(soup)))
+                image="\n".join(pics))
 
 os.makedirs("out", exist_ok=True)
 done = set()
