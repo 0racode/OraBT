@@ -37,5 +37,6 @@ class CbtApplication : Application() {
         Updater.init(this)
         AuthManager.init(this)
         LiveManager.init(this)
+        Push.init(this)
     }
 }

@@ -174,6 +174,13 @@ object LiveManager {
     /** Answers picked so far in the running test (position -> letter). Kept while the app is open. */
     val answers = MutableStateFlow<Map<Int, Char>>(emptyMap())
 
+    /** Session code from a tapped notification; the join screen fills it in. */
+    val pendingCode = MutableStateFlow<String?>(null)
+
+    suspend fun registerToken(token: String) {
+        runCatching { val _r: JsonObject = request("register_token") { put("token", token) } }
+    }
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences("live", Context.MODE_PRIVATE)
         val code = prefs.getString("code", null)
@@ -260,8 +267,10 @@ object LiveManager {
         picks: Map<String, Int>,
         manual: List<DraftItem>,
         answers: List<Char>,
+        announce: Boolean = true,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
+        put("announce", announce)
         put("minutes", minutes)
         put("picks", JsonArray(picks.filter { it.value > 0 }.map { (s, n) ->
             buildJsonObject { put("subject", s); put("count", n) }

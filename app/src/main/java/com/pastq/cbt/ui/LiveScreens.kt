@@ -57,6 +57,8 @@ import kotlinx.coroutines.launch
 fun LiveJoinScreen(onBack: () -> Unit, onJoined: () -> Unit, onAdmin: () -> Unit) {
     val current by LiveManager.joined.collectAsStateWithLifecycle()
     var code by remember { mutableStateOf("") }
+    val pending by LiveManager.pendingCode.collectAsStateWithLifecycle()
+    LaunchedEffect(pending) { pending?.let { code = it.filter { ch -> ch.isLetterOrDigit() }.take(8).uppercase(); LiveManager.pendingCode.value = null } }
     var name by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

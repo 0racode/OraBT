@@ -211,6 +211,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var pasteSubject by remember { mutableStateOf("") }
     var drafting by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var announce by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -238,6 +239,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     picks = picks.mapValues { it.value.toIntOrNull() ?: 0 },
                                     manual = manual.map { DraftItem(it.question, it.section, it.a, it.b, it.c, it.d, "", it.explanation, false, true, it.subject) },
                                     answers = manual.map { it.answer ?: 'a' },
+                                    announce = announce,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -257,6 +259,13 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
         ) {
             OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             DurationInput(hours, mins, { hours = it }, { mins = it }, timeOk)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Notify everyone", style = MaterialTheme.typography.titleMedium)
+                    Text("Sends a phone notice with the code when you create the test and when you start it. Turn off for a private test.", style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Switch(checked = announce, onCheckedChange = { announce = it })
+            }
 
             Text("Questions from the bank", style = MaterialTheme.typography.titleMedium)
             Text("Type how many to draw at random from each subject. Only answer-checked questions are used.", style = MaterialTheme.typography.bodySmall)

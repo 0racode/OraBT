@@ -11,6 +11,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import com.pastq.cbt.data.LiveManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
@@ -36,14 +45,45 @@ import com.pastq.cbt.ui.PracticeSetupScreen
 import com.pastq.cbt.ui.ResultScreen
 
 class MainActivity : ComponentActivity() {
+    private val noticePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** A tapped live-test notice carries the session code; the join screen fills it in. */
+    private fun handleNotice(i: Intent?) {
+        if (i?.getStringExtra("kind") == "live") {
+            LiveManager.pendingCode.value = i.getStringExtra("code")?.takeIf { it.isNotBlank() } ?: "-"
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotice(intent)
+    }
+
+    // Android 13+ needs a one-time permission to show notices.
+    private fun askForNotices() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val prefs = getSharedPreferences("push", MODE_PRIVATE)
+        if (prefs.getBoolean("asked", false)) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        prefs.edit().putBoolean("asked", true).apply()
+        noticePermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val repo = (application as CbtApplication).repository
         Updater.check()
+        handleNotice(intent)
+        askForNotices()
         setContent {
             AppTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     val nav = rememberNavController()
+                    val pending by LiveManager.pendingCode.collectAsStateWithLifecycle()
+                    LaunchedEffect(pending) {
+                        if (pending != null && nav.currentDestination?.route != "liveJoin") nav.navigate("liveJoin")
+                    }
                     NavHost(navController = nav, startDestination = "home") {
                         composable("home") {
                             HomeScreen(
