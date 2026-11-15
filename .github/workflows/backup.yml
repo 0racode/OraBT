@@ -1,0 +1,73 @@
+name: Nightly backup
+# Copies the PastQ tables (questions, AI checks, accounts, scores, admin) out of Supabase, encrypts them with a
+# passphrase only the owner knows, and keeps the last 7 nightly copies on the private-by-encryption branch "backups".
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.BACKUP_TOKEN }}
+      PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets
+        run: |
+          [ -n "$TOKEN" ] || { echo "Add the repository secret BACKUP_TOKEN (see tools/RESTORE.md)"; exit 1; }
+          [ -n "$PASS" ] || { echo "Add the repository secret BACKUP_PASSPHRASE (see tools/RESTORE.md)"; exit 1; }
+      - name: Export tables
+        run: |
+          set -e
+          mkdir -p dump
+          for t in pastq_questions pastq_ai_checks pastq_accounts pastq_scores pastq_admin; do
+            off=0; : > "dump/$t.jsonl"
+            while :; do
+              curl -sS --fail -m 120 -X POST "https://wyzswbklytklzbcmihsh.supabase.co/functions/v1/pastq-backup" \
+                -H "apikey: sb_publishable_E21JIx3tbNTX9K3bhR6Ieg_fZRL1xqj" -H "x-backup-token: $TOKEN" \
+                -H "Content-Type: application/json" -d "{\"table\":\"$t\",\"offset\":$off}" -o page.json
+              python3 - "$t" <<'PY'
+          import json, sys
+          p = json.load(open("page.json"))
+          with open(f"dump/{sys.argv[1]}.jsonl", "a") as f:
+              for r in p["rows"]: f.write(json.dumps(r, ensure_ascii=False) + "\n")
+          open("more", "w").write("1" if p["more"] else "0")
+          PY
+              [ "$(cat more)" = "1" ] || break
+              off=$((off+1000))
+            done
+            echo "$t: $(wc -l < dump/$t.jsonl) rows"
+          done
+          # refuse to overwrite good backups with an empty one
+          [ "$(wc -l < dump/pastq_questions.jsonl)" -gt 1000 ] || { echo "Too few questions exported, not saving"; exit 1; }
+      - name: Encrypt
+        run: |
+          tar czf dump.tgz dump
+          day=$(date -u +%a | tr A-Z a-z)
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASS -in dump.tgz -out "pastq-$day.tgz.enc"
+          ls -l pastq-*.enc
+      - name: Save on the backups branch (last 7 nights only, history squashed)
+        run: |
+          set -e
+          day=$(date -u +%a | tr A-Z a-z)
+          cp "pastq-$day.tgz.enc" /tmp/
+          git config user.name "backup"; git config user.email "backup@users.noreply.github.com"
+          git fetch origin backups || true
+          if git rev-parse --verify origin/backups >/dev/null 2>&1; then
+            git checkout -B backups origin/backups
+          else
+            git checkout --orphan backups; git rm -rf . >/dev/null 2>&1 || true
+          fi
+          cp "/tmp/pastq-$day.tgz.enc" .
+          printf 'Encrypted nightly backups of PastQ CBT data. Decrypt with the owner passphrase, see tools/RESTORE.md on main.\n' > README.txt
+          git add -A
+          git commit -m "Backup $(date -u +%F)" || true
+          # squash to one commit so old copies of overwritten files do not pile up in history
+          git checkout --orphan squashed
+          git add -A
+          git commit -m "Backups (latest $(date -u +%F))"
+          git push -f origin squashed:backups
