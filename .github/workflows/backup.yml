@@ -16,6 +16,9 @@ jobs:
       TOKEN: ${{ secrets.BACKUP_TOKEN }}
       PASS: ${{ secrets.BACKUP_PASSPHRASE }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
       - name: Check secrets
         run: |
           [ -n "$TOKEN" ] || { echo "Add the repository secret BACKUP_TOKEN (see tools/RESTORE.md)"; exit 1; }
@@ -55,6 +58,7 @@ jobs:
           set -e
           day=$(date -u +%a | tr A-Z a-z)
           cp "pastq-$day.tgz.enc" /tmp/
+          cd repo   # separate checkout, so the plain dump/ folder can never be committed
           git config user.name "backup"; git config user.email "backup@users.noreply.github.com"
           git fetch origin backups || true
           if git rev-parse --verify origin/backups >/dev/null 2>&1; then
