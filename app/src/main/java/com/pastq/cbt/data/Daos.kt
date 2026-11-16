@@ -61,7 +61,7 @@ interface ResultDao {
     fun all(): Flow<List<ExamResultEntity>>
 }
 
-@Database(entities = [QuestionEntity::class, ExamResultEntity::class], version = 4, exportSchema = false)
+@Database(entities = [QuestionEntity::class, ExamResultEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun questions(): QuestionDao
     abstract fun results(): ResultDao

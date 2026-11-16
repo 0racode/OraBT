@@ -42,7 +42,7 @@ fun QuestionCard(
         Text(q.question, style = MaterialTheme.typography.titleMedium)
         QuestionImage(q.image)
 
-        listOf('a', 'b', 'c', 'd').forEach { letter ->
+        listOf('a', 'b', 'c', 'd', 'e').forEach { letter ->
             val text = q.optionText(letter)
             if (text.isBlank()) return@forEach
             val isPicked = picked == letter

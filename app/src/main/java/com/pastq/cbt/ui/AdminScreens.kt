@@ -447,7 +447,8 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         if (q.section.isNotBlank()) Text(q.section, style = MaterialTheme.typography.bodySmall)
                         Text(q.question, style = MaterialTheme.typography.titleSmall)
                         QuestionImage(q.image)
-                        listOf('a' to q.a, 'b' to q.b, 'c' to q.c, 'd' to q.d).forEach { (l, text) ->
+                        listOf('a' to q.a, 'b' to q.b, 'c' to q.c, 'd' to q.d, 'e' to q.e).forEach { (l, text) ->
+                            if (text.isBlank()) return@forEach
                             val tags = listOfNotNull(
                                 if (q.answer == l.toString()) "stored key" else null,
                                 if (q.ai_answer == l.toString()) "AI says" else null,
@@ -459,14 +460,16 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         }
                         Text("Correct option (or approve / remove):", style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf('a', 'b', 'c', 'd').forEach { l ->
-                                OutlinedButton(onClick = {
-                                    scope.launch {
-                                        try { LiveManager.adminSetKey(q.id, l); rows.remove(q); error = null }
-                                        catch (e: Exception) { error = e.friendlyMessage() }
-                                    }
-                                }) { Text(l.uppercase()) }
-                            }
+                            listOf('a' to q.a, 'b' to q.b, 'c' to q.c, 'd' to q.d, 'e' to q.e)
+                                .filter { it.second.isNotBlank() }
+                                .forEach { (l, _) ->
+                                    OutlinedButton(onClick = {
+                                        scope.launch {
+                                            try { LiveManager.adminSetKey(q.id, l); rows.remove(q); error = null }
+                                            catch (e: Exception) { error = e.friendlyMessage() }
+                                        }
+                                    }) { Text(l.uppercase()) }
+                                }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(onClick = {

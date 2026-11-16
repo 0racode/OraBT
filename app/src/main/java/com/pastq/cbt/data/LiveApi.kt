@@ -28,6 +28,7 @@ data class LiveItem(
     val b: String = "",
     val c: String = "",
     val d: String = "",
+    val e: String = "",
     val answer: String = "",
     val explanation: String = "",
     val image: String = "",
@@ -37,13 +38,14 @@ data class LiveItem(
         'a' -> a
         'b' -> b
         'c' -> c
-        else -> d
+        'd' -> d
+        else -> e
     }
 
     /** The same question shaped like a bank question, so the normal question card can show it. */
     fun asQuestion() = QuestionEntity(
         id = qid ?: "live-$pos", subject = subject, question = question,
-        a = a, b = b, c = c, d = d, answer = answer, section = section, image = image,
+        a = a, b = b, c = c, d = d, e = e, answer = answer, section = section, image = image,
     )
 }
 
@@ -150,6 +152,7 @@ data class DisputedItem(
     val b: String = "",
     val c: String = "",
     val d: String = "",
+    val e: String = "",
     val answer: String = "",
     val section: String = "",
     val image: String = "",

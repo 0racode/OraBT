@@ -408,7 +408,7 @@ fun ReviewCard(item: LiveItem) {
             }
             Text(item.question, style = MaterialTheme.typography.titleSmall)
             QuestionImage(item.image)
-            listOf('a', 'b', 'c', 'd').forEach { letter ->
+            listOf('a', 'b', 'c', 'd', 'e').forEach { letter ->
                 val text = item.optionText(letter)
                 if (text.isBlank()) return@forEach
                 val container = when {

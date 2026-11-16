@@ -18,6 +18,7 @@ data class QuestionEntity(
     val b: String,
     val c: String,
     val d: String,
+    @ColumnInfo(defaultValue = "''") val e: String = "",
     val answer: String,
     val section: String = "",
     val solution: String = "",
@@ -32,7 +33,8 @@ data class QuestionEntity(
         'a' -> a
         'b' -> b
         'c' -> c
-        else -> d
+        'd' -> d
+        else -> e
     }
 }
 
