@@ -100,13 +100,13 @@ def parse(html, subject, qid):
         if t: exp = t; break
     if not stem or ans not in list(opts) or len(opts) < 4:
         return None
-    if len(opts) > 4 or "e" in opts:
+    if len(opts) > 5 or any(l not in "abcde" for l in opts):
         stats["skipped_options"] += 1; return None
     pics = find_images(soup)
     stats["classroom_imgs_on_pages"] += len([1 for im in soup.find_all("img") if "/storage/classroom/" in ((im.get("src") or "") + (im.get("srcset") or ""))])
     if pics: stats["with_image"] += 1
     return dict(src="myschool", src_id=qid, subject=subject, exam_type=etype, year=year, question=stem,
-                a=opts["a"], b=opts["b"], c=opts["c"], d=opts["d"], answer=ans, explanation=exp,
+                a=opts["a"], b=opts["b"], c=opts["c"], d=opts["d"], e=opts.get("e", ""), answer=ans, explanation=exp,
                 image="\n".join(pics))
 
 os.makedirs("out", exist_ok=True)
