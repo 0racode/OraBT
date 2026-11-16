@@ -155,6 +155,7 @@ data class DisputedItem(
     val image: String = "",
     val ai_answer: String? = null,
     val ai_explanation: String? = null,
+    val review_status: String = "disputed",
 )
 
 @Serializable
@@ -294,4 +295,10 @@ object LiveManager {
 
     suspend fun adminSetKey(id: String, answer: Char): JsonObject =
         request("admin_set_key", true) { put("id", id); put("answer", answer.toString()) }
+
+    /** Confirms the stored answer as-is, without changing it. */
+    suspend fun adminApprove(id: String): JsonObject = request("admin_approve", true) { put("id", id) }
+
+    /** Permanently removes a bad question from the bank. */
+    suspend fun adminRemove(id: String): JsonObject = request("admin_remove", true) { put("id", id) }
 }

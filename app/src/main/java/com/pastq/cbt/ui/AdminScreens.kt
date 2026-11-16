@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -388,6 +389,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
     var more by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
+    var removing by remember { mutableStateOf<DisputedItem?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
@@ -404,11 +406,29 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         loading = false
     }
 
+    removing?.let { q ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove this question?") },
+            text = { Text("It is deleted for everyone and cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = q; removing = null
+                    scope.launch {
+                        try { LiveManager.adminRemove(target.id); rows.remove(target); error = null }
+                        catch (e: Exception) { error = e.friendlyMessage() }
+                    }
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
+        )
+    }
+
     Scaffold(topBar = { BackBar("Review answer keys", onBack) }) { pad ->
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Text(
-                    "The AI disagreed with the stored answer on these questions. Pick the correct option to fix it for everyone. Questions you set here count as confirmed.",
+                    "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -416,7 +436,14 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
             items(rows, key = { it.id }) { q ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("${q.subject} · ${q.id}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("${q.subject} · ${q.id}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                if (q.review_status == "unverifiable") "Unverifiable" else "Disputed",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                         if (q.section.isNotBlank()) Text(q.section, style = MaterialTheme.typography.bodySmall)
                         Text(q.question, style = MaterialTheme.typography.titleSmall)
                         QuestionImage(q.image)
@@ -430,21 +457,29 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         q.ai_explanation?.takeIf { it.isNotBlank() }?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text("Set the correct answer:", style = MaterialTheme.typography.labelLarge)
+                        Text("Correct option (or approve / remove):", style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf('a', 'b', 'c', 'd').forEach { l ->
                                 OutlinedButton(onClick = {
                                     scope.launch {
-                                        try {
-                                            LiveManager.adminSetKey(q.id, l)
-                                            rows.remove(q)
-                                            error = null
-                                        } catch (e: Exception) {
-                                            error = e.friendlyMessage()
-                                        }
+                                        try { LiveManager.adminSetKey(q.id, l); rows.remove(q); error = null }
+                                        catch (e: Exception) { error = e.friendlyMessage() }
                                     }
                                 }) { Text(l.uppercase()) }
                             }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = {
+                                scope.launch {
+                                    try { LiveManager.adminApprove(q.id); rows.remove(q); error = null }
+                                    catch (e: Exception) { error = e.friendlyMessage() }
+                                }
+                            }, modifier = Modifier.weight(1f)) { Text("Approve as-is") }
+                            OutlinedButton(
+                                onClick = { removing = q },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Remove") }
                         }
                     }
                 }
