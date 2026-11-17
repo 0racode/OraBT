@@ -2,12 +2,16 @@
 
 package com.pastq.cbt.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -18,7 +22,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +43,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -51,6 +60,10 @@ import com.pastq.cbt.data.Repository
 import com.pastq.cbt.data.friendlyMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.OutputStreamWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun AdminLoginScreen(onBack: () -> Unit, onLoggedIn: () -> Unit) {
@@ -381,6 +394,27 @@ fun AdminResultsScreen(id: String, onBack: () -> Unit) {
     }
 }
 
+/** Escapes one CSV cell per RFC 4180 (quotes the value if it holds a comma, quote or newline). */
+private fun csvCell(s: String): String {
+    val escaped = s.replace("\"", "\"\"")
+    return if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"$escaped\"" else escaped
+}
+
+private val DISPUTED_CSV_HEADER = listOf(
+    "id", "status", "subject", "question", "section", "image",
+    "a", "b", "c", "d", "e", "stored_answer", "ai_answer", "ai_explanation",
+)
+
+private fun DisputedItem.toCsvRow(): String = listOf(
+    id, review_status, subject, question, section, image,
+    a, b, c, d, e, answer, ai_answer ?: "", ai_explanation ?: "",
+).joinToString(",") { csvCell(it) }
+
+private fun buildDisputedCsv(items: List<DisputedItem>): String = buildString {
+    append(DISPUTED_CSV_HEADER.joinToString(",") { csvCell(it) }).append("\r\n")
+    for (it in items) append(it.toCsvRow()).append("\r\n")
+}
+
 @Composable
 fun AdminDisputedScreen(onBack: () -> Unit) {
     val rows = remember { mutableStateListOf<DisputedItem>() }
@@ -390,7 +424,34 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
     var removing by remember { mutableStateOf<DisputedItem?>(null) }
+    val selected = remember { mutableStateListOf<String>() }
+    var exportMenu by remember { mutableStateOf(false) }
+    var exportingAll by remember { mutableStateOf(false) }
+    var pendingCsv by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val csv = pendingCsv
+        pendingCsv = null
+        if (uri != null && csv != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    OutputStreamWriter(out, Charsets.UTF_8).use { it.write(csv) }
+                }
+                error = null
+            } catch (e: Exception) {
+                error = "Couldn't save the file: ${e.message}"
+            }
+        }
+    }
+
+    fun exportCsv(items: List<DisputedItem>) {
+        if (items.isEmpty()) { error = "Nothing to export."; return }
+        pendingCsv = buildDisputedCsv(items)
+        val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date())
+        saveLauncher.launch("pastq_review_$stamp.csv")
+    }
 
     LaunchedEffect(reload) {
         loading = true
@@ -415,7 +476,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     val target = q; removing = null
                     scope.launch {
-                        try { LiveManager.adminRemove(target.id); rows.remove(target); error = null }
+                        try { LiveManager.adminRemove(target.id); rows.remove(target); selected.remove(target.id); error = null }
                         catch (e: Exception) { error = e.friendlyMessage() }
                     }
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
@@ -424,19 +485,78 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         )
     }
 
-    Scaffold(topBar = { BackBar("Review answer keys", onBack) }) { pad ->
+    Scaffold(
+        topBar = {
+            BackBar("Review answer keys", onBack) {
+                Box {
+                    TextButton(onClick = { exportMenu = true }, enabled = !exportingAll) {
+                        if (exportingAll) CircularProgressIndicator(Modifier.size(18.dp)) else Text("Export")
+                    }
+                    DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Export selected (${selected.size})") },
+                            enabled = selected.isNotEmpty(),
+                            onClick = {
+                                exportMenu = false
+                                exportCsv(rows.filter { it.id in selected })
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Export all disputed/faulty") },
+                            onClick = {
+                                exportMenu = false
+                                scope.launch {
+                                    exportingAll = true
+                                    try {
+                                        val all = mutableListOf<DisputedItem>()
+                                        var off = 0
+                                        while (true) {
+                                            val r = LiveManager.adminDisputed(off)
+                                            if (r.items.isEmpty()) break
+                                            all.addAll(r.items)
+                                            off += r.items.size
+                                            if (r.items.size < 20) break
+                                        }
+                                        exportCsv(all)
+                                        error = null
+                                    } catch (e: Exception) {
+                                        error = e.friendlyMessage()
+                                    }
+                                    exportingAll = false
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        },
+    ) { pad ->
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Text(
-                    "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed.",
+                    "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed. Tick questions to export a bulk selection, or use Export > Export all to save everything in one CSV file.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
+            if (rows.isNotEmpty()) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(onClick = {
+                            if (selected.size == rows.size) selected.clear() else { selected.clear(); selected.addAll(rows.map { it.id }) }
+                        }) { Text(if (selected.size == rows.size) "Clear selection" else "Select all loaded (${rows.size})") }
+                        if (selected.isNotEmpty()) Text("${selected.size} selected", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             items(rows, key = { it.id }) { q ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Checkbox(
+                                checked = q.id in selected,
+                                onCheckedChange = { checked -> if (checked) selected.add(q.id) else selected.remove(q.id) },
+                            )
                             Text("${q.subject} · ${q.id}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Text(
                                 if (q.review_status == "unverifiable") "Unverifiable" else "Disputed",
@@ -465,7 +585,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                                 .forEach { (l, _) ->
                                     OutlinedButton(onClick = {
                                         scope.launch {
-                                            try { LiveManager.adminSetKey(q.id, l); rows.remove(q); error = null }
+                                            try { LiveManager.adminSetKey(q.id, l); rows.remove(q); selected.remove(q.id); error = null }
                                             catch (e: Exception) { error = e.friendlyMessage() }
                                         }
                                     }) { Text(l.uppercase()) }
@@ -474,7 +594,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(onClick = {
                                 scope.launch {
-                                    try { LiveManager.adminApprove(q.id); rows.remove(q); error = null }
+                                    try { LiveManager.adminApprove(q.id); rows.remove(q); selected.remove(q.id); error = null }
                                     catch (e: Exception) { error = e.friendlyMessage() }
                                 }
                             }, modifier = Modifier.weight(1f)) { Text("Approve as-is") }

@@ -62,12 +62,13 @@ import kotlinx.coroutines.launch
 private const val ENGLISH = "English Language"
 
 @Composable
-fun BackBar(title: String, onBack: () -> Unit) {
+fun BackBar(title: String, onBack: () -> Unit, actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}) {
     TopAppBar(
         title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         },
+        actions = actions,
     )
 }
 
