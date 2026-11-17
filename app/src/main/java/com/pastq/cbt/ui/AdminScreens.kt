@@ -58,8 +58,12 @@ import com.pastq.cbt.data.DraftItem
 import com.pastq.cbt.data.LiveManager
 import com.pastq.cbt.data.Repository
 import com.pastq.cbt.data.friendlyMessage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -400,19 +404,99 @@ private fun csvCell(s: String): String {
     return if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"$escaped\"" else escaped
 }
 
+// Last column, "action", is left blank on export; fill it in and re-import the same file to apply
+// corrections. Accepted values: approve, remove, or a/b/c/d/e to set that as the correct option.
 private val DISPUTED_CSV_HEADER = listOf(
     "id", "status", "subject", "question", "section", "image",
-    "a", "b", "c", "d", "e", "stored_answer", "ai_answer", "ai_explanation",
+    "a", "b", "c", "d", "e", "stored_answer", "ai_answer", "ai_explanation", "action",
 )
 
 private fun DisputedItem.toCsvRow(): String = listOf(
     id, review_status, subject, question, section, image,
-    a, b, c, d, e, answer, ai_answer ?: "", ai_explanation ?: "",
+    a, b, c, d, e, answer, ai_answer ?: "", ai_explanation ?: "", "",
 ).joinToString(",") { csvCell(it) }
 
 private fun buildDisputedCsv(items: List<DisputedItem>): String = buildString {
     append(DISPUTED_CSV_HEADER.joinToString(",") { csvCell(it) }).append("\r\n")
     for (it in items) append(it.toCsvRow()).append("\r\n")
+}
+
+private val IMPORT_ACTIONS = setOf("approve", "remove", "a", "b", "c", "d", "e")
+
+/** One correction read from an uploaded file: do this to the question with this id. */
+private data class ImportRow(val id: String, val action: String)
+
+private data class ImportParseResult(val rows: List<ImportRow>, val skippedNoId: Int, val skippedNoAction: Int, val skippedBadAction: Int)
+
+/** Minimal RFC 4180 reader: handles quoted fields, escaped quotes, and commas/newlines inside quotes. */
+private fun parseCsv(text: String): List<List<String>> {
+    val rows = mutableListOf<List<String>>()
+    var field = StringBuilder()
+    var row = mutableListOf<String>()
+    var inQuotes = false
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        if (inQuotes) {
+            when {
+                c == '"' && i + 1 < text.length && text[i + 1] == '"' -> { field.append('"'); i++ }
+                c == '"' -> inQuotes = false
+                else -> field.append(c)
+            }
+        } else {
+            when (c) {
+                '"' -> inQuotes = true
+                ',' -> { row.add(field.toString()); field = StringBuilder() }
+                '\r' -> {}
+                '\n' -> { row.add(field.toString()); field = StringBuilder(); rows.add(row); row = mutableListOf() }
+                else -> field.append(c)
+            }
+        }
+        i++
+    }
+    if (field.isNotEmpty() || row.isNotEmpty()) { row.add(field.toString()); rows.add(row) }
+    return rows
+}
+
+@Serializable
+private data class ImportRowJson(val id: String = "", val action: String = "")
+
+@Serializable
+private data class ImportWrapperJson(val items: List<ImportRowJson> = emptyList())
+
+private fun parseImportRows(text: String): ImportParseResult {
+    var noId = 0; var noAction = 0; var badAction = 0
+    val out = mutableListOf<ImportRow>()
+    fun consider(id: String, action: String) {
+        val cid = id.trim()
+        val act = action.trim().lowercase()
+        when {
+            cid.isEmpty() -> noId++
+            act.isEmpty() -> noAction++
+            act !in IMPORT_ACTIONS -> badAction++
+            else -> out.add(ImportRow(cid, act))
+        }
+    }
+    val trimmed = text.trimStart()
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+        val list = runCatching { LiveManager.json.decodeFromString<List<ImportRowJson>>(text) }
+            .getOrElse { LiveManager.json.decodeFromString<ImportWrapperJson>(text).items }
+        for (r in list) consider(r.id, r.action)
+    } else {
+        val table = parseCsv(text)
+        if (table.isEmpty()) return ImportParseResult(emptyList(), 0, 0, 0)
+        val header = table[0].map { it.trim().lowercase() }
+        val idIdx = header.indexOf("id")
+        val actionIdx = header.indexOf("action")
+        if (idIdx < 0 || actionIdx < 0) {
+            throw IllegalArgumentException("The file needs \"id\" and \"action\" columns.")
+        }
+        for (r in table.drop(1)) {
+            if (r.size <= 1 && r.getOrNull(0).isNullOrBlank()) continue
+            consider(r.getOrNull(idIdx) ?: "", r.getOrNull(actionIdx) ?: "")
+        }
+    }
+    return ImportParseResult(out, noId, noAction, badAction)
 }
 
 @Composable
@@ -428,8 +512,16 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
     var exportMenu by remember { mutableStateOf(false) }
     var exportingAll by remember { mutableStateOf(false) }
     var pendingCsv by remember { mutableStateOf<String?>(null) }
+    var importPreview by remember { mutableStateOf<ImportParseResult?>(null) }
+    var importBusy by remember { mutableStateOf(false) }
+    var importProgress by remember { mutableStateOf(0 to 0) }
+    var importResult by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    fun refreshList() {
+        rows.clear(); offset = 0; more = true; selected.clear(); reload++
+    }
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val csv = pendingCsv
@@ -451,6 +543,21 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         pendingCsv = buildDisputedCsv(items)
         val stamp = SimpleDateFormat("yyyy-MM-dd_HHmm", Locale.US).format(Date())
         saveLauncher.launch("pastq_review_$stamp.csv")
+    }
+
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            error = null
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                } ?: throw IllegalArgumentException("Couldn't read that file.")
+                importPreview = withContext(Dispatchers.IO) { parseImportRows(text) }
+            } catch (e: Exception) {
+                error = "Couldn't read the file: ${e.message ?: "unknown error"}"
+            }
+        }
     }
 
     LaunchedEffect(reload) {
@@ -485,9 +592,88 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         )
     }
 
+    importPreview?.let { p ->
+        val approve = p.rows.count { it.action == "approve" }
+        val remove = p.rows.count { it.action == "remove" }
+        val rekey = p.rows.size - approve - remove
+        val skipped = p.skippedNoId + p.skippedNoAction + p.skippedBadAction
+        AlertDialog(
+            onDismissRequest = { if (!importBusy) importPreview = null },
+            title = { Text("Apply corrections?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (importBusy) {
+                        Text("Applying ${importProgress.first} of ${importProgress.second}…")
+                    } else {
+                        if (p.rows.isEmpty()) {
+                            Text("No usable rows found. Each row needs an id and an action (approve, remove, or a/b/c/d/e).")
+                        } else {
+                            Text("$approve to approve as-is, $rekey to re-key, $remove to remove. ${p.rows.size} total.")
+                        }
+                        if (skipped > 0) {
+                            Text(
+                                "$skipped row(s) skipped (${p.skippedNoId} no id, ${p.skippedNoAction} no action, ${p.skippedBadAction} unrecognized action).",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !importBusy && p.rows.isNotEmpty(),
+                    onClick = {
+                        scope.launch {
+                            importBusy = true
+                            var ok = 0
+                            val failures = mutableListOf<String>()
+                            p.rows.forEachIndexed { i, row ->
+                                importProgress = (i + 1) to p.rows.size
+                                try {
+                                    when (row.action) {
+                                        "approve" -> LiveManager.adminApprove(row.id)
+                                        "remove" -> LiveManager.adminRemove(row.id)
+                                        else -> LiveManager.adminSetKey(row.id, row.action[0])
+                                    }
+                                    ok++
+                                } catch (e: Exception) {
+                                    failures.add("${row.id}: ${e.friendlyMessage()}")
+                                }
+                            }
+                            importBusy = false
+                            importPreview = null
+                            importResult = buildString {
+                                append("$ok of ${p.rows.size} applied.")
+                                if (failures.isNotEmpty()) {
+                                    append("\n\nFailed:\n")
+                                    append(failures.take(10).joinToString("\n"))
+                                    if (failures.size > 10) append("\n…and ${failures.size - 10} more.")
+                                }
+                            }
+                            refreshList()
+                        }
+                    },
+                ) { Text("Apply") }
+            },
+            dismissButton = { TextButton(enabled = !importBusy, onClick = { importPreview = null }) { Text("Cancel") } },
+        )
+    }
+
+    importResult?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { importResult = null },
+            title = { Text("Import finished") },
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = { importResult = null }) { Text("OK") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             BackBar("Review answer keys", onBack) {
+                Box {
+                    TextButton(onClick = { openLauncher.launch(arrayOf("*/*")) }, enabled = !exportingAll) { Text("Import") }
+                }
                 Box {
                     TextButton(onClick = { exportMenu = true }, enabled = !exportingAll) {
                         if (exportingAll) CircularProgressIndicator(Modifier.size(18.dp)) else Text("Export")
@@ -534,7 +720,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 Text(
-                    "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed. Tick questions to export a bulk selection, or use Export > Export all to save everything in one CSV file.",
+                    "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed. Tick questions to export a bulk selection, or use Export > Export all to save everything in one CSV file. Fill in the blank \"action\" column (approve, remove, or a/b/c/d/e) and use Import to apply your corrections in one go.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
