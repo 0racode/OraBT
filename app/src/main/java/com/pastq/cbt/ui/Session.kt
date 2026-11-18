@@ -11,6 +11,7 @@ data class ExamConfig(
     /** Number of questions to draw for each subject. */
     val quotas: Map<String, Int>,
     val minutes: Int,
+    /** Exam types to draw from: empty means any, otherwise comma-separated, e.g. "utme,wassce". */
     val type: String,
 )
 

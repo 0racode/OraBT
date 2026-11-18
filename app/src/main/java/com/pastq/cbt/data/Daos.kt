@@ -42,11 +42,13 @@ interface QuestionDao {
     )
     suspend fun practice(subject: String, types: String, year: String): List<QuestionEntity>
 
+    /** Random draw for exams. [types] is empty for "any" or a comma-separated list such as "utme,wassce". */
     @Query(
         "SELECT * FROM questions WHERE subject = :subject " +
-            "AND (:type = '' OR type = :type) ORDER BY RANDOM() LIMIT :limit"
+            "AND (:types = '' OR instr(',' || :types || ',', ',' || type || ',') > 0) " +
+            "ORDER BY RANDOM() LIMIT :limit"
     )
-    suspend fun random(subject: String, type: String, limit: Int): List<QuestionEntity>
+    suspend fun random(subject: String, types: String, limit: Int): List<QuestionEntity>
 }
 
 @Dao

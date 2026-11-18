@@ -307,7 +307,7 @@ fun ExamSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Unit) {
     var utme by remember { mutableStateOf(true) }
     var chosen by remember { mutableStateOf(setOf<String>()) }
     var perSubject by remember { mutableIntStateOf(20) }
-    var type by remember { mutableStateOf("") }
+    var types by remember { mutableStateOf(setOf<String>()) }
     var hours by remember { mutableStateOf("2") }
     var mins by remember { mutableStateOf("0") }
 
@@ -348,7 +348,7 @@ fun ExamSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Unit) {
                             subjects = orderedSubjects,
                             quotas = quotas,
                             minutes = minutes,
-                            type = if (utme) "utme" else type,
+                            type = if (utme) "utme" else types.sorted().joinToString(","),
                         )
                         onStart()
                     },
@@ -371,10 +371,15 @@ fun ExamSetupScreen(repo: Repository, onStart: () -> Unit, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (!utme) {
-                        Text("Exam type", style = MaterialTheme.typography.titleMedium)
+                        Text("Exam type (pick one or more)", style = MaterialTheme.typography.titleMedium)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("", "utme", "wassce", "post-utme").forEach { t ->
-                                FilterChip(selected = type == t, onClick = { type = t }, label = { Text(if (t == "") "Any" else t.uppercase()) })
+                            FilterChip(selected = types.isEmpty(), onClick = { types = emptySet() }, label = { Text("Any") })
+                            listOf("utme", "wassce", "neco", "post-utme").forEach { t ->
+                                FilterChip(
+                                    selected = t in types,
+                                    onClick = { types = if (t in types) types - t else types + t },
+                                    label = { Text(t.uppercase()) },
+                                )
                             }
                         }
                         Text("Questions per subject", style = MaterialTheme.typography.titleMedium)
