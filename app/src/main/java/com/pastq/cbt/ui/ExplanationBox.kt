@@ -82,7 +82,7 @@ fun ExplanationBox(id: String) {
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
-                    Text(r.explanation, style = MaterialTheme.typography.bodyMedium)
+                    HtmlText(r.explanation, style = MaterialTheme.typography.bodyMedium)
                     Text(
                         if (r.source == "bank") "Explanation from the question bank."
                         else "AI tutor explanation. Double-check important points with your teacher.",

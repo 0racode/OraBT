@@ -750,8 +750,8 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
-                        if (q.section.isNotBlank()) Text(q.section, style = MaterialTheme.typography.bodySmall)
-                        Text(q.question, style = MaterialTheme.typography.titleSmall)
+                        if (q.section.isNotBlank()) HtmlText(q.section, style = MaterialTheme.typography.bodySmall)
+                        HtmlText(q.question, style = MaterialTheme.typography.titleSmall)
                         QuestionImage(q.image)
                         listOf('a' to q.a, 'b' to q.b, 'c' to q.c, 'd' to q.d, 'e' to q.e).forEach { (l, text) ->
                             if (text.isBlank()) return@forEach
@@ -759,7 +759,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                                 if (q.answer == l.toString()) "stored key" else null,
                                 if (q.ai_answer == l.toString()) "AI says" else null,
                             ).joinToString(", ")
-                            Text("${l.uppercaseChar()}. $text" + if (tags.isNotEmpty()) "   [$tags]" else "", style = MaterialTheme.typography.bodyMedium)
+                            HtmlText(text, prefix = "${l.uppercaseChar()}. ", suffix = if (tags.isNotEmpty()) "   [$tags]" else "", style = MaterialTheme.typography.bodyMedium)
                         }
                         q.ai_explanation?.takeIf { it.isNotBlank() }?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

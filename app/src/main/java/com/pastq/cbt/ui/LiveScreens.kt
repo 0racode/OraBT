@@ -404,9 +404,9 @@ fun ReviewCard(item: LiveItem) {
                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
             )
             if (item.section.isNotBlank()) {
-                Text(item.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HtmlText(item.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(item.question, style = MaterialTheme.typography.titleSmall)
+            HtmlText(item.question, style = MaterialTheme.typography.titleSmall)
             QuestionImage(item.image)
             listOf('a', 'b', 'c', 'd', 'e').forEach { letter ->
                 val text = item.optionText(letter)
@@ -427,12 +427,12 @@ fun ReviewCard(item: LiveItem) {
                     colors = CardDefaults.cardColors(containerColor = container),
                     border = if (letter == correct) BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary) else null,
                 ) {
-                    Text("${letter.uppercaseChar()}.  $text$tag", Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+                    HtmlText(text, Modifier.padding(12.dp), prefix = "${letter.uppercaseChar()}.  ", suffix = tag, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (picked == null) Text("You did not answer this question.", style = MaterialTheme.typography.bodySmall)
             when {
-                item.explanation.isNotBlank() -> Text(item.explanation, style = MaterialTheme.typography.bodyMedium)
+                item.explanation.isNotBlank() -> HtmlText(item.explanation, style = MaterialTheme.typography.bodyMedium)
                 item.qid != null -> ExplanationBox(item.qid)
             }
         }

@@ -37,9 +37,9 @@ fun QuestionCard(
         val meta = listOf(q.subject, q.type.uppercase(), q.year).filter { it.isNotBlank() }.joinToString(" · ")
         Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         if (q.section.isNotBlank()) {
-            Text(q.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            HtmlText(q.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(q.question, style = MaterialTheme.typography.titleMedium)
+        HtmlText(q.question, style = MaterialTheme.typography.titleMedium)
         QuestionImage(q.image)
 
         listOf('a', 'b', 'c', 'd', 'e').forEach { letter ->
@@ -66,7 +66,7 @@ fun QuestionCard(
             ) {
                 Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = isPicked, onClick = null, modifier = Modifier.padding(8.dp))
-                    Text("${letter.uppercaseChar()}.  $text", style = MaterialTheme.typography.bodyLarge)
+                    HtmlText(text, prefix = "${letter.uppercaseChar()}.  ", style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }
@@ -77,7 +77,7 @@ fun QuestionCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.tertiary,
             )
-            if (q.solution.isNotBlank()) Text(q.solution, style = MaterialTheme.typography.bodyMedium)
+            if (q.solution.isNotBlank()) HtmlText(q.solution, style = MaterialTheme.typography.bodyMedium)
             if (q.solution.trim().length < 20) ExplanationBox(q)
         }
     }
