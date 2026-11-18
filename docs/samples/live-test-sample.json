@@ -1,0 +1,25 @@
+{
+  "title": "Mock Test 1",
+  "minutes": 40,
+  "subject": "Biology",
+  "questions": [
+    {
+      "question": "Which organelle is the site of photosynthesis?",
+      "a": "Mitochondrion", "b": "Chloroplast", "c": "Ribosome", "d": "Nucleus",
+      "answer": "b",
+      "explanation": "Chloroplasts contain chlorophyll."
+    },
+    {
+      "subject": "Mathematics",
+      "question": "Solve 2x + 3 = 11",
+      "options": ["x = 3", "x = 4", "x = 5", "x = 7"],
+      "answer": "B"
+    },
+    {
+      "question": "The <u>underlined</u> word is a noun. Which word class is <b>goat</b>?",
+      "section": "Read the sentence and answer.",
+      "a": "Verb", "b": "Adjective", "c": "Noun", "d": "Adverb",
+      "answer": "c"
+    }
+  ]
+}

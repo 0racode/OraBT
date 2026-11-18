@@ -234,6 +234,115 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var announce by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var importPreview by remember { mutableStateOf<LiveImport?>(null) }
+    var showGuide by remember { mutableStateOf(false) }
+    var sampleText by remember { mutableStateOf<String?>(null) }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            error = null
+            try {
+                importPreview = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.buffered().readBytes() }
+                        ?: throw IllegalArgumentException("Couldn't open that file.")
+                    if (bytes.size > LiveImportParser.MAX_BYTES) throw IllegalArgumentException("That file is too big (1 MB at most).")
+                    LiveImportParser.parse(String(bytes, Charsets.UTF_8))
+                }
+            } catch (e: Exception) {
+                error = "Couldn't read the file: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    fun writeSample(uri: android.net.Uri?) {
+        val text = sampleText
+        sampleText = null
+        if (uri == null || text == null) return
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            error = null
+        } catch (e: Exception) {
+            error = "Couldn't save the file: ${e.message}"
+        }
+    }
+    val saveSampleCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeSample(it) }
+    val saveSampleJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeSample(it) }
+
+    importPreview?.let { p ->
+        AlertDialog(
+            onDismissRequest = { importPreview = null },
+            title = { Text("Import from file") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${p.questions.size} question(s) ready to add" + if (p.problems.isNotEmpty()) ", ${p.problems.size} skipped." else ".")
+                    p.title?.let { Text("Title from file: $it", style = MaterialTheme.typography.bodySmall) }
+                    p.minutes?.let { Text("Time from file: $it minutes", style = MaterialTheme.typography.bodySmall) }
+                    p.problems.take(8).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    if (p.problems.size > 8) Text("…and ${p.problems.size - 8} more skipped.", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "They are added to any questions already on this page. Check the answers before you create the test.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = p.questions.isNotEmpty(),
+                    onClick = {
+                        manual.addAll(p.questions.map {
+                            ManualDraft(
+                                question = it.question, section = it.section, a = it.a, b = it.b, c = it.c, d = it.d,
+                                explanation = it.explanation, answer = it.answer, note = "Imported from file. Check it.", subject = it.subject,
+                            )
+                        })
+                        if (title.isBlank()) p.title?.let { title = it }
+                        p.minutes?.let { hours = (it / 60).toString(); mins = (it % 60).toString() }
+                        importPreview = null
+                    },
+                ) { Text("Add ${p.questions.size}") }
+            },
+            dismissButton = { TextButton(onClick = { importPreview = null }) { Text("Cancel") } },
+        )
+    }
+
+    if (showGuide) {
+        val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+        AlertDialog(
+            onDismissRequest = { showGuide = false },
+            title = { Text("Import file format") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Use a .csv or .json file with one entry per question. Every question needs the question text, four options (a, b, c, d) and the correct answer (a, b, c or d). Optional: subject, explanation, and section (a passage or instructions).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { sampleText = LiveImportParser.SAMPLE_CSV; saveSampleCsv.launch("pastq_live_sample.csv") }) { Text("Save sample CSV") }
+                        OutlinedButton(onClick = { sampleText = LiveImportParser.SAMPLE_JSON; saveSampleJson.launch("pastq_live_sample.json") }) { Text("Save sample JSON") }
+                    }
+                    Text("CSV", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "First row is the header. Exports from Excel and Google Sheets work. Put text that contains commas inside quotes.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(LiveImportParser.SAMPLE_CSV, fontFamily = mono, style = MaterialTheme.typography.labelSmall)
+                    Text("JSON", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "A list of questions, or an object with title, minutes (1 to 120), subject and a questions list. Options can be a, b, c, d or one options list. The answer can also be 1 to 4.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(LiveImportParser.SAMPLE_JSON, fontFamily = mono, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "Text can use <b>, <i>, <u> and &nbsp; formatting. A test can hold up to 200 questions. Rows with a problem are skipped and listed before anything is added.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showGuide = false }) { Text("Close") } },
+        )
+    }
 
     val minutes = (hours.toIntOrNull() ?: 0) * 60 + (mins.toIntOrNull() ?: 0)
     val timeOk = minutes in 1..120
@@ -306,6 +415,10 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 "Paste questions, with or without options. The AI tidies them and, when a question has no options, writes four. It never adds questions you did not paste. You confirm every correct answer.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("Import CSV / JSON file") }
+                TextButton(onClick = { showGuide = true }) { Text("File format") }
+            }
             OutlinedTextField(pasteSubject, { pasteSubject = it.take(60) }, label = { Text("Subject (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(paste, { paste = it.take(12000) }, label = { Text("Paste questions here") }, minLines = 4, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
