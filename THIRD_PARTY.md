@@ -27,9 +27,10 @@ Two subjects are new to the app: Agricultural Science and Further Mathematics.
 ## ExamWiseNG questions
 798 practice questions (Biology, Chemistry, Economics, English Language, Government, Mathematics, Physics) with
 explanations, from https://github.com/aliuoluyemi7-prog/ExamWiseNG. The repository has no licence file. The author gave
-verbal permission to the PastQ CBT owner to use the questions for educational purposes only, not for commercial use.
+permission to the PastQ CBT owner to use the questions for educational purposes only, not for commercial use. The
+written confirmation is kept with the project records.
 Keep PastQ CBT free of charge and of paid features or advertising while these questions are included, and remove them
-if the author asks. Written confirmation from the author should be kept with the project records.
+if the author asks.
 Changes made: options were shuffled; questions were added to the shared PastQ question library as type "practice".
 
 ## MySchool past questions

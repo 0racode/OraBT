@@ -31,6 +31,21 @@ The app works without a token; only "Fetch more questions online" needs it.
 - Maths (74) and Physics (128) are thin in the backup; top up from the API for more.
 - ALOC API response parsing is written from their docs and is lenient, but check one real response if "Fetch more" returns 0.
 
+## Data sources and permissions
+PastQ CBT is free, with no ads and no fees. Every question source below is used with the owner's permission or an open
+licence. Full terms, conditions and changes made are in [THIRD_PARTY.md](THIRD_PARTY.md), and the written confirmations are
+kept with the project records. Content is removed on request.
+
+| Source | Content | Permission |
+|---|---|---|
+| [MySchool](https://myschool.ng/) | JAMB/UTME, WAEC and NECO past questions, answers, explanations and pictures | Written permission for this free educational app. Credit and link to myschool.ng. |
+| [Nigerianscholar (Ulearngo)](https://app.ulearngo.com) | Question banks, answers and explanations from the web app | Written permission and written confirmation by email. Credit and link to app.ulearngo.com. Web app only, not the mobile apps. |
+| ALOC | Past questions (2020 database backup and API) | Permission of the data owner. |
+| [ExamWiseNG](https://github.com/aliuoluyemi7-prog/ExamWiseNG) | 798 practice questions with explanations | Written permission from the author, for educational use only and not commercial use. |
+| [NAIJAPREP](https://github.com/ALIYUAAM10/NAIJAPREP) | 150 practice questions | MIT licence. |
+
+Thank you to MySchool, Nigerianscholar (Ulearngo), ALOC, ExamWiseNG and NAIJAPREP for making these questions available.
+
 ## Ideas for next versions
 Leaderboards or accounts, per-subject progress charts, bookmarks, a UTME preset (English 60 + 3 subjects x 40, 2 hours), dark-mode polish, Play Store release signing.
 
