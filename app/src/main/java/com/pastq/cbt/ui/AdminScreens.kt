@@ -56,6 +56,8 @@ import com.pastq.cbt.data.AdminSession
 import com.pastq.cbt.data.DisputedItem
 import com.pastq.cbt.data.DraftItem
 import com.pastq.cbt.data.LiveManager
+import com.pastq.cbt.data.ReportInfo
+import com.pastq.cbt.data.Reporter
 import com.pastq.cbt.data.Repository
 import com.pastq.cbt.data.friendlyMessage
 import kotlinx.coroutines.Dispatchers
@@ -519,8 +521,10 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val reports = remember { mutableStateMapOf<String, List<ReportInfo>>() }
+
     fun refreshList() {
-        rows.clear(); offset = 0; more = true; selected.clear(); reload++
+        rows.clear(); reports.clear(); offset = 0; more = true; selected.clear(); reload++
     }
 
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
@@ -565,6 +569,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         try {
             val r = LiveManager.adminDisputed(offset)
             rows.addAll(r.items)
+            reports.putAll(Reporter.adminReports(r.items.map { it.id }))
             offset += r.items.size
             more = r.items.size >= 20
             error = null
@@ -763,6 +768,15 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         }
                         q.ai_explanation?.takeIf { it.isNotBlank() }?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        reports[q.id]?.takeIf { it.isNotEmpty() }?.let { list ->
+                            Text("Reported by players (${list.size}):", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+                            list.forEach { rep ->
+                                Text(
+                                    "• ${Reporter.label(rep.reason)}" + if (rep.note.isNotBlank()) ": ${rep.note}" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                         Text("Correct option (or approve / remove):", style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

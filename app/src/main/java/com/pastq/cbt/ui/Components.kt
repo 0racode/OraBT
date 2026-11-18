@@ -35,7 +35,10 @@ fun QuestionCard(
     val correct = q.answer.firstOrNull()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val meta = listOf(q.subject, q.type.uppercase(), q.year).filter { it.isNotBlank() }.joinToString(" · ")
-        Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(meta, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            ReportButton(q.id)
+        }
         if (q.section.isNotBlank()) {
             HtmlText(q.section, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

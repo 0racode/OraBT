@@ -75,6 +75,15 @@ interface CloudService {
         @Body body: kotlinx.serialization.json.JsonObject,
     ): kotlinx.serialization.json.JsonObject
 
+    /** Question reports: players send action "report"; the admin reads them with "admin_reports" and x-admin-token. */
+    @POST("functions/v1/pastq-report")
+    suspend fun reportCall(
+        @Header("apikey") key: String,
+        @Header("Authorization") auth: String,
+        @Header("x-admin-token") admin: String?,
+        @Body body: kotlinx.serialization.json.JsonObject,
+    ): kotlinx.serialization.json.JsonObject
+
     @POST("functions/v1/sync-aloc")
     suspend fun syncAloc(
         @Header("apikey") key: String,

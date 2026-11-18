@@ -435,6 +435,7 @@ fun ReviewCard(item: LiveItem) {
                 item.explanation.isNotBlank() -> HtmlText(item.explanation, style = MaterialTheme.typography.bodyMedium)
                 item.qid != null -> ExplanationBox(item.qid)
             }
+            if (item.qid != null) ReportButton(item.qid)
         }
     }
 }
