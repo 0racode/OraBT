@@ -71,6 +71,13 @@ data class LiveState(
     val questions: List<LiveItem> = emptyList(),
     val timer_mode: String = "shared",
     val score_visibility: String = "after_end",
+    /** "approved", "pending" (late joiner waiting for the admin) or "denied". */
+    val join_status: String = "approved",
+    /** True after the player left the app during the test; the admin must let them back in. */
+    val locked: Boolean = false,
+    val rejoin_requested: Boolean = false,
+    /** Answers saved on the server (kept when the player left earlier), position -> letter. */
+    val saved_answers: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -94,7 +101,17 @@ data class LiveResults(
 )
 
 @Serializable
-data class JoinReply(val token: String = "", val name: String = "", val code: String = "", val title: String = "")
+data class JoinReply(
+    val token: String = "", val name: String = "", val code: String = "", val title: String = "",
+    val join_status: String = "approved",
+)
+
+/** One person waiting for the admin: a late joiner ("join") or someone who left the app and wants back in ("rejoin"). */
+@Serializable
+data class JoinRequest(val player_id: String = "", val name: String = "", val kind: String = "join")
+
+@Serializable
+data class AdminRequests(val status: String = "", val requests: List<JoinRequest> = emptyList())
 
 @Serializable
 data class AdminToken(val token: String = "")
@@ -111,6 +128,9 @@ data class AdminSession(
     val submitted: Int = 0,
     val questions: Int = 0,
     val seconds_left: Int = 0,
+    /** Late-join and come-back requests waiting for the admin. */
+    val requests: Int = 0,
+    val auto_end: Boolean = false,
 )
 
 @Serializable
@@ -208,6 +228,18 @@ object LiveManager {
 
     fun pick(pos: Int, letter: Char) = answers.update { it + (pos to letter) }
 
+    /** Puts back answers the server kept from before the player left, without overwriting newer local picks. */
+    fun restoreAnswers(saved: Map<String, String>) {
+        if (saved.isEmpty()) return
+        answers.update { cur ->
+            val back = saved.mapNotNull { (k, v) ->
+                val pos = k.toIntOrNull(); val ch = v.firstOrNull()
+                if (pos != null && ch != null) pos to ch else null
+            }.toMap()
+            back + cur
+        }
+    }
+
     fun signOutAdmin() { _admin.value = null }
 
     private suspend fun call(body: JsonObject, admin: Boolean): JsonObject {
@@ -230,8 +262,9 @@ object LiveManager {
     }
 
     // ----- players -----
-    suspend fun join(code: String, name: String): Result<Joined> = runCatching {
-        val r: JoinReply = request("join") { put("code", code.trim()); put("name", name.trim()) }
+    /** [autoName] is true for signed-in players: the server adds a number if someone in the session already has that name. */
+    suspend fun join(code: String, name: String, autoName: Boolean = false): Result<Joined> = runCatching {
+        val r: JoinReply = request("join") { put("code", code.trim()); put("name", name.trim()); put("auto_name", autoName) }
         answers.value = emptyMap()
         val j = Joined(r.code, r.token, r.name, r.title)
         prefs.edit().putString("code", j.code).putString("token", j.token).putString("name", j.name).putString("title", j.title).apply()
@@ -253,6 +286,29 @@ object LiveManager {
         }
     }
 
+    /** Tells the server the player left the app during the test. The answers so far are kept; the admin decides about a return. */
+    suspend fun leave(): Boolean {
+        val j = _joined.value ?: return false
+        val picked = answers.value
+        repeat(3) {
+            val ok = runCatching {
+                val _r: JsonObject = request("leave") {
+                    put("code", j.code); put("token", j.token)
+                    put("answers", buildJsonObject { picked.forEach { (pos, letter) -> put(pos.toString(), letter.toString()) } })
+                }
+            }.isSuccess
+            if (ok) return true
+            kotlinx.coroutines.delay(1500)
+        }
+        return false
+    }
+
+    /** Asks the admin to let a locked-out player back in. */
+    suspend fun rejoinRequest(): Result<Unit> = runCatching {
+        val j = _joined.value ?: throw IllegalStateException("Join a session first.")
+        val _r: JsonObject = request("rejoin_request") { put("code", j.code); put("token", j.token) }
+    }
+
     suspend fun results(): LiveResults {
         val j = _joined.value ?: throw IllegalStateException("Join a session first.")
         return request("results") { put("code", j.code); put("token", j.token) }
@@ -270,6 +326,9 @@ object LiveManager {
     suspend fun adminEnd(id: String): JsonObject = request("admin_end", true) { put("id", id) }
     suspend fun adminDelete(id: String): JsonObject = request("admin_delete", true) { put("id", id) }
     suspend fun adminResults(id: String): AdminResults = request("admin_results", true) { put("id", id) }
+    suspend fun adminRequests(id: String): AdminRequests = request("admin_requests", true) { put("id", id) }
+    suspend fun adminDecide(id: String, playerId: String, allow: Boolean): JsonObject =
+        request("admin_decide", true) { put("id", id); put("player_id", playerId); put("allow", allow) }
 
     suspend fun adminCreate(
         title: String,
@@ -284,8 +343,14 @@ object LiveManager {
         joinWindowMin: Int = 10,
         /** "after_end": scores appear when the test ends. "immediate": right after each player finishes. */
         scoreVisibility: String = "after_end",
+        /** Optional custom join code (4 to 12 letters or digits). Empty means a random code. */
+        code: String = "",
+        /** End the test automatically as soon as every player has submitted. */
+        autoEnd: Boolean = false,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
+        put("code", code)
+        put("auto_end", autoEnd)
         put("announce", announce)
         put("minutes", minutes)
         put("timer_mode", timerMode)

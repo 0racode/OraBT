@@ -64,7 +64,7 @@ private fun SignedOutContent(onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    val canSubmit = !busy && email.contains("@") && password.length >= 6
+    val canSubmit = !busy && email.contains("@") && password.length >= 6 && (!creating || first.trim().length >= 2)
 
     Scaffold(
         topBar = { BackBar(if (creating) "Create account" else "Log in", onBack) },
@@ -100,7 +100,7 @@ private fun SignedOutContent(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (creating) {
-                OutlinedTextField(first, { first = it.take(40) }, label = { Text("First name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(first, { first = it.take(40) }, label = { Text("First name (required)") }, isError = first.isNotEmpty() && first.trim().length < 2, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(last, { last = it.take(40) }, label = { Text("Last name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
             OutlinedTextField(
@@ -115,7 +115,7 @@ private fun SignedOutContent(onBack: () -> Unit) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (creating) {
                 Text(
-                    "Leaderboard names show your first name and last initial. With no name, you appear as \"Student\" plus a short code.",
+                    "Your first name is shown in live tests and on leaderboards (leaderboards add your last initial).",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -160,11 +160,11 @@ private fun SignedInContent(account: AuthManager.Account, onBack: () -> Unit) {
             Text(account.displayName, style = MaterialTheme.typography.titleLarge)
             Text(account.email, style = MaterialTheme.typography.bodyMedium)
 
-            Text("Name on the leaderboard", style = MaterialTheme.typography.titleMedium)
+            Text("Your name (first name is required)", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(first, { first = it.take(40) }, label = { Text("First name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(last, { last = it.take(40) }, label = { Text("Last name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Button(
-                enabled = !busy,
+                enabled = !busy && first.trim().length >= 2,
                 onClick = {
                     scope.launch {
                         busy = true

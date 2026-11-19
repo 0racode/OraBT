@@ -30,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,7 +44,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pastq.cbt.data.AppScope
+import com.pastq.cbt.data.AuthManager
 import com.pastq.cbt.data.LiveBoardRow
 import com.pastq.cbt.data.LiveItem
 import com.pastq.cbt.data.LiveManager
@@ -63,7 +69,9 @@ fun LiveJoinScreen(onBack: () -> Unit, onJoined: () -> Unit, onAdmin: () -> Unit
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val canJoin = !busy && code.length >= 4 && name.trim().length >= 2
+    // Signed-in players are not asked for a name: their account name (or email) is used.
+    val account by AuthManager.account.collectAsStateWithLifecycle()
+    val canJoin = !busy && code.length >= 4 && (account != null || name.trim().length >= 2)
 
     Scaffold(
         topBar = { BackBar("Live test", onBack) },
@@ -74,7 +82,7 @@ fun LiveJoinScreen(onBack: () -> Unit, onJoined: () -> Unit, onAdmin: () -> Unit
                     onClick = {
                         scope.launch {
                             busy = true; error = null
-                            LiveManager.join(code, name).fold(
+                            LiveManager.join(code, account?.displayName ?: name, autoName = account != null).fold(
                                 onSuccess = { onJoined() },
                                 onFailure = { error = it.friendlyMessage() },
                             )
@@ -103,7 +111,8 @@ fun LiveJoinScreen(onBack: () -> Unit, onJoined: () -> Unit, onAdmin: () -> Unit
                 }
             }
             Text(
-                "Enter the code your teacher gave you, and a name for the scoreboard. Nobody else in the session can use the same name.",
+                if (account != null) "Enter the code your teacher gave you."
+                else "Enter the code your teacher gave you, and a name for the scoreboard. Nobody else in the session can use the same name.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedTextField(
@@ -112,9 +121,18 @@ fun LiveJoinScreen(onBack: () -> Unit, onJoined: () -> Unit, onAdmin: () -> Unit
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                name, { name = it.take(24) }, label = { Text("Your name") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+            if (account != null) {
+                Text("You will join as ${account!!.displayName}.", style = MaterialTheme.typography.titleSmall)
+                Text("This is the name on your account. Change it in your profile.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                OutlinedTextField(
+                    name, { name = it.take(40) }, label = { Text("Your name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Text(
+                "If the test has already started, your request goes to the admin and you can begin once they allow you in.",
+                style = MaterialTheme.typography.bodySmall,
             )
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -136,6 +154,11 @@ fun LivePlayScreen(onBack: () -> Unit) {
     var submitted by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
+    // Set the moment the player leaves the app during the test; the test stays closed until the admin lets them back in.
+    var leftApp by remember { mutableStateOf(false) }
+    var lockSeen by remember { mutableStateOf(false) }
+    var requestSent by remember { mutableStateOf(false) }
+    var requestError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun submitNow() {
@@ -167,12 +190,20 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 error = null
                 state = s
                 if (s.submitted) submitted = true
-                if (s.status == "running" && !s.submitted) {
-                    if (s.questions.isNotEmpty()) questions = s.questions
+                if (s.locked) lockSeen = true
+                if (leftApp && s.status == "running" && !s.submitted && s.join_status == "approved" && !s.locked) {
+                    // Either the admin let this player back in, or the server never got the "left the app" message (send it again).
+                    if (lockSeen) { leftApp = false; lockSeen = false; requestSent = false } else LiveManager.leave()
+                }
+                if (s.status == "running" && !s.submitted && !s.locked && s.join_status == "approved") {
+                    if (s.questions.isNotEmpty()) {
+                        questions = s.questions
+                        LiveManager.restoreAnswers(s.saved_answers)
+                    }
                     deadline = System.currentTimeMillis() + s.seconds_left * 1000L
                 }
                 // Results are asked for once the session ended, or right after this player submitted when the admin shows scores immediately.
-                if (s.status == "ended" || (s.submitted && s.score_visibility == "immediate")) {
+                if (s.join_status == "approved" && (s.status == "ended" || (s.submitted && s.score_visibility == "immediate"))) {
                     val r = LiveManager.results()
                     results = r
                     if (r.ready && r.final) break
@@ -181,7 +212,8 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 error = e.friendlyMessage()
             }
             // Slower refresh while waiting for the session to end with the score already on screen.
-            delay(if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
+            val waitingOnAdmin = state?.join_status == "pending" || state?.locked == true || leftApp
+            delay(if (waitingOnAdmin) 3000 else if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
         }
     }
     // Clock for the countdown.
@@ -191,7 +223,22 @@ fun LivePlayScreen(onBack: () -> Unit) {
 
     val s = state
     val remaining = ((deadline - now) / 1000).toInt().coerceAtLeast(0)
-    val testing = s?.status == "running" && !submitted && questions.isNotEmpty()
+    val testing = s?.status == "running" && !submitted && questions.isNotEmpty() && !leftApp && s.locked.not() && s.join_status == "approved"
+
+    // Leaving the app (home button, switching apps, locking the phone) during the test closes it for this player.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val hostActivity = ctx.findHostActivity()
+    DisposableEffect(lifecycleOwner, testing) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && testing && hostActivity?.isChangingConfigurations != true) {
+                leftApp = true
+                lockSeen = false
+                AppScope.launch { LiveManager.leave() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(remaining, testing) {
         if (testing && remaining <= 0 && deadline > 0) submitNow()
     }
@@ -217,6 +264,60 @@ fun LivePlayScreen(onBack: () -> Unit) {
             Text("You are not in a live session.", Modifier.padding(pad).padding(16.dp))
         }
         r != null && r.ready -> LiveResultsContent(r, onBack)
+        s != null && s.join_status == "pending" -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
+            Column(
+                Modifier.padding(pad).padding(24.dp).fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                CircularProgressIndicator()
+                Text("Waiting for the admin", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "The test has already started, so your request to join was sent to the admin. Keep this screen open. The test opens as soon as they allow you in.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(onClick = { LiveManager.forget(); onBack() }) { Text("Cancel my request") }
+            }
+        }
+        s != null && s.join_status == "denied" -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
+            Column(
+                Modifier.padding(pad).padding(24.dp).fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Request declined", style = MaterialTheme.typography.titleLarge)
+                Text("The admin did not let you into this test.", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = { LiveManager.forget(); onBack() }) { Text("Leave") }
+            }
+        }
+        s != null && s.status == "running" && !submitted && (leftApp || s.locked) -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
+            Column(
+                Modifier.padding(pad).padding(24.dp).fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("You left the test", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Leaving the app during a live test closes it for you. Your answers so far are saved. Ask the admin to let you back in; if they allow it you continue where you stopped, and the clock does not stop meanwhile.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (requestSent || s.rejoin_requested) {
+                    CircularProgressIndicator()
+                    Text("Request sent. Waiting for the admin...", style = MaterialTheme.typography.titleSmall)
+                } else {
+                    Button(onClick = {
+                        scope.launch {
+                            requestError = null
+                            LiveManager.rejoinRequest().fold(
+                                onSuccess = { requestSent = true },
+                                onFailure = { requestError = it.friendlyMessage() },
+                            )
+                        }
+                    }) { Text("Ask the admin to let me back in") }
+                }
+                requestError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
         s == null -> Scaffold(topBar = { BackBar("Live test", onBack) }) { pad ->
             Column(Modifier.padding(pad).padding(24.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (error == null) CircularProgressIndicator() else {
@@ -460,4 +561,15 @@ fun ReviewCard(item: LiveItem) {
             if (item.qid != null) ReportButton(item.qid)
         }
     }
+}
+
+
+/** The Activity behind a Compose context (the context can be wrapped several times). */
+private fun android.content.Context.findHostActivity(): android.app.Activity? {
+    var c: android.content.Context? = this
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
 }

@@ -57,6 +57,7 @@ class ExamViewModel(private val repo: Repository) : ViewModel() {
     private val config = Session.examConfig
 
     init {
+        Session.leftExam = false
         viewModelScope.launch {
             val cfg = config
             if (cfg == null) {

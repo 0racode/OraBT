@@ -51,10 +51,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pastq.cbt.data.AdminRequests
 import com.pastq.cbt.data.AdminResults
 import com.pastq.cbt.data.AdminSession
 import com.pastq.cbt.data.DisputedItem
 import com.pastq.cbt.data.DraftItem
+import com.pastq.cbt.data.JoinRequest
 import com.pastq.cbt.data.LiveManager
 import com.pastq.cbt.data.QueueCounts
 import com.pastq.cbt.data.ReportInfo
@@ -126,6 +128,7 @@ fun AdminHomeScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
     var deleting by remember { mutableStateOf<AdminSession?>(null) }
+    var requestsFor by remember { mutableStateOf<AdminSession?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(admin) { if (admin == null) onBack() }
@@ -147,6 +150,8 @@ fun AdminHomeScreen(
             reload++
         }
     }
+
+    requestsFor?.let { s -> RequestsDialog(s) { requestsFor = null; reload++ } }
 
     deleting?.let { s ->
         AlertDialog(
@@ -188,11 +193,17 @@ fun AdminHomeScreen(
                                     else -> "Ended"
                                 }
                                 Text("$state · ${s.questions} questions · ${s.minutes} min", style = MaterialTheme.typography.bodyMedium)
-                                Text("${s.players} joined · ${s.submitted} submitted", style = MaterialTheme.typography.bodySmall)
+                                Text("${s.players} joined · ${s.submitted} submitted" + if (s.auto_end) " · ends when all submit" else "", style = MaterialTheme.typography.bodySmall)
+                                if (s.requests > 0) {
+                                    Text("${s.requests} request(s) waiting for you", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                }
                                 if (s.subjects.isNotBlank()) Text(s.subjects, style = MaterialTheme.typography.bodySmall)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (s.status == "waiting") Button(onClick = { act { LiveManager.adminStart(s.id) } }) { Text("Start") }
                                     if (s.status == "running") Button(onClick = { act { LiveManager.adminEnd(s.id) } }) { Text("End now") }
+                                    if (s.status == "running" || s.requests > 0) {
+                                        OutlinedButton(onClick = { requestsFor = s }) { Text(if (s.requests > 0) "Requests (${s.requests})" else "Requests") }
+                                    }
                                     OutlinedButton(onClick = { onResults(s.id) }) { Text("Results") }
                                     TextButton(onClick = { deleting = s }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                                 }
@@ -203,6 +214,71 @@ fun AdminHomeScreen(
             }
         }
     }
+}
+
+/** Late-join requests and come-back requests for one test, with Allow and Decline for each. */
+@Composable
+private fun RequestsDialog(session: AdminSession, onClose: () -> Unit) {
+    var data by remember { mutableStateOf<AdminRequests?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busyId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(session.id) {
+        while (true) {
+            try { data = LiveManager.adminRequests(session.id); error = null } catch (e: Exception) { error = e.friendlyMessage() }
+            delay(3000)
+        }
+    }
+
+    fun decide(r: JoinRequest, allow: Boolean) {
+        scope.launch {
+            busyId = r.player_id
+            try {
+                LiveManager.adminDecide(session.id, r.player_id, allow)
+                data = LiveManager.adminRequests(session.id)
+                error = null
+            } catch (e: Exception) {
+                error = e.friendlyMessage()
+            }
+            busyId = null
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Requests: ${session.title}") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                val d = data
+                when {
+                    d == null && error == null -> CircularProgressIndicator()
+                    d != null && d.requests.isEmpty() -> Text("No requests waiting. New ones appear here by themselves.")
+                    d != null -> d.requests.forEach { r ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(r.name, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    if (r.kind == "join") "Asking to join after the start"
+                                    else "Left the app during the test and asks to come back",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(enabled = busyId == null, onClick = { decide(r, true) }) { Text("Allow") }
+                                    OutlinedButton(enabled = busyId == null, onClick = { decide(r, false) }) { Text("Decline") }
+                                }
+                                if (r.kind == "rejoin") {
+                                    Text("Decline grades the answers they already gave and ends their test.", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Close") } },
+    )
 }
 
 private data class ManualDraft(
@@ -236,6 +312,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var timerMode by remember { mutableStateOf("shared") }
     var joinWindow by remember { mutableStateOf("10") }
     var scoreVisibility by remember { mutableStateOf("after_end") }
+    var customCode by remember { mutableStateOf("") }
+    var autoEnd by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -353,7 +431,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     val pickTotal = picks.values.sumOf { it.toIntOrNull() ?: 0 }
     val total = pickTotal + manual.size
     val windowOk = timerMode != "personal" || (joinWindow.toIntOrNull() ?: -1) in 0..60
-    val canCreate = !creating && timeOk && windowOk && total in 1..200 && manual.all { it.valid }
+    val codeOk = customCode.isEmpty() || customCode.length in 4..12
+    val canCreate = !creating && timeOk && windowOk && codeOk && total in 1..200 && manual.all { it.valid }
 
     Scaffold(
         topBar = { BackBar("New live test", onBack) },
@@ -377,6 +456,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     timerMode = timerMode,
                                     joinWindowMin = joinWindow.toIntOrNull() ?: 10,
                                     scoreVisibility = scoreVisibility,
+                                    code = customCode,
+                                    autoEnd = autoEnd,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -395,6 +476,13 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                customCode, { customCode = it.filter { ch -> ch.isLetterOrDigit() && ch.code < 128 }.take(12).uppercase() },
+                label = { Text("Join code (optional, 4 to 12 letters or digits)") }, singleLine = true,
+                isError = !codeOk,
+                supportingText = { Text("Leave empty for a random code. Pick something easy to say out loud, like MATHS101.") },
+                modifier = Modifier.fillMaxWidth(),
+            )
             DurationInput(hours, mins, { hours = it }, { mins = it }, timeOk)
 
             Text("When does each player's time start?", style = MaterialTheme.typography.titleMedium)
@@ -409,12 +497,12 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 )
             } else {
                 Text(
-                    "Every player gets the full time from when they begin, even if they join after you start. Players can join up to the number of minutes below after you start, so the whole session lasts the duration plus this window.",
+                    "Every player gets the full time from when they begin, even if they join after you start. Players who ask to join after you start can be let in up to the number of minutes below, so the whole session lasts the duration plus this window.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(
                     joinWindow, { joinWindow = it.filter(Char::isDigit).take(2) },
-                    label = { Text("Late join window (minutes, 0 to 60)") }, singleLine = true,
+                    label = { Text("Late request window (minutes, 0 to 60)") }, singleLine = true,
                     isError = !windowOk,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -432,6 +520,17 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 } else {
                     "Scores, positions and corrections all appear when the test ends (when the time is up or you end it)."
                 },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("End when everyone has submitted", style = MaterialTheme.typography.titleMedium)
+                    Text("The test ends by itself as soon as every player who was let in has submitted, instead of waiting for the time to run out. You can still end it earlier yourself.", style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Switch(checked = autoEnd, onCheckedChange = { autoEnd = it })
+            }
+            Text(
+                "Players who join after you start must send a request, and you decide in the Requests list. Anyone who leaves the app during the test is locked out until you let them back in.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

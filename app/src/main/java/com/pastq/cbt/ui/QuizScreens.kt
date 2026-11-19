@@ -122,6 +122,26 @@ fun ExamScreen(repo: Repository, onFinished: () -> Unit) {
 
     LaunchedEffect(vm.finished) { if (vm.finished) onFinished() }
 
+    // Timed exams are closed when the student leaves the app: the answers given so far are submitted and the exam cannot be resumed.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val hostActivity = run {
+        var c: android.content.Context? = ctx
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        c as? android.app.Activity
+    }
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !vm.loading && vm.questions.isNotEmpty() &&
+                !vm.finished && hostActivity?.isChangingConfigurations != true
+            ) {
+                Session.leftExam = true
+                vm.submit()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     if (confirm) {
         val unanswered = vm.questions.size - vm.answers.size
         AlertDialog(
@@ -217,6 +237,16 @@ fun ResultScreen(onHome: () -> Unit, onAccount: () -> Unit) {
         }
         val pct = if (outcome.total == 0) 0 else outcome.correct * 100 / outcome.total
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (Session.leftExam) {
+                item {
+                    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text(
+                            "This exam was closed because you left the app. Only the answers you had given were marked. Stay in the app during a timed exam.",
+                            Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
             item {
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("$pct%", style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.primary)

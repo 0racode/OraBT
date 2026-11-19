@@ -35,6 +35,8 @@ object Session {
     var examConfig: ExamConfig? = null
     var review: List<ReviewItem> = emptyList()
     var outcome: ExamOutcome? = null
+    /** True when the last timed exam was closed because the student left the app. */
+    var leftExam: Boolean = false
     val scoreStatus = MutableStateFlow<ScoreStatus>(ScoreStatus.Idle)
 }
 
