@@ -69,11 +69,15 @@ data class LiveState(
     val submitted: Boolean = false,
     val name: String = "",
     val questions: List<LiveItem> = emptyList(),
+    val timer_mode: String = "shared",
+    val score_visibility: String = "after_end",
 )
 
 @Serializable
 data class LiveResults(
     val ready: Boolean = false,
+    /** False while the session is still running: score and position can still change and corrections are hidden. */
+    val final: Boolean = true,
     val status: String = "",
     val seconds_left: Int = 0,
     val title: String = "",
@@ -274,10 +278,19 @@ object LiveManager {
         manual: List<DraftItem>,
         answers: List<Char>,
         announce: Boolean = true,
+        /** "shared": one clock from the admin's start. "personal": every player gets the full time from when they begin. */
+        timerMode: String = "shared",
+        /** Personal timer only: players may join up to this many minutes after the admin starts the test. */
+        joinWindowMin: Int = 10,
+        /** "after_end": scores appear when the test ends. "immediate": right after each player finishes. */
+        scoreVisibility: String = "after_end",
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
         put("announce", announce)
         put("minutes", minutes)
+        put("timer_mode", timerMode)
+        put("join_window_min", joinWindowMin)
+        put("score_visibility", scoreVisibility)
         put("picks", JsonArray(picks.filter { it.value > 0 }.map { (s, n) ->
             buildJsonObject { put("subject", s); put("count", n) }
         }))

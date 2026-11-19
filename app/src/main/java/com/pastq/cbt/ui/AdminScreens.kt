@@ -232,6 +232,9 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var drafting by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var announce by remember { mutableStateOf(true) }
+    var timerMode by remember { mutableStateOf("shared") }
+    var joinWindow by remember { mutableStateOf("10") }
+    var scoreVisibility by remember { mutableStateOf("after_end") }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -348,7 +351,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     val timeOk = minutes in 1..120
     val pickTotal = picks.values.sumOf { it.toIntOrNull() ?: 0 }
     val total = pickTotal + manual.size
-    val canCreate = !creating && timeOk && total in 1..200 && manual.all { it.valid }
+    val windowOk = timerMode != "personal" || (joinWindow.toIntOrNull() ?: -1) in 0..60
+    val canCreate = !creating && timeOk && windowOk && total in 1..200 && manual.all { it.valid }
 
     Scaffold(
         topBar = { BackBar("New live test", onBack) },
@@ -369,6 +373,9 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     manual = manual.map { DraftItem(it.question, it.section, it.a, it.b, it.c, it.d, "", it.explanation, false, true, it.subject) },
                                     answers = manual.map { it.answer ?: 'a' },
                                     announce = announce,
+                                    timerMode = timerMode,
+                                    joinWindowMin = joinWindow.toIntOrNull() ?: 10,
+                                    scoreVisibility = scoreVisibility,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -388,6 +395,44 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
         ) {
             OutlinedTextField(title, { title = it.take(80) }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             DurationInput(hours, mins, { hours = it }, { mins = it }, timeOk)
+
+            Text("When does each player's time start?", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = timerMode == "shared", onClick = { timerMode = "shared" }, label = { Text("Same clock for everyone") })
+                FilterChip(selected = timerMode == "personal", onClick = { timerMode = "personal" }, label = { Text("Full time for each player") })
+            }
+            if (timerMode == "shared") {
+                Text(
+                    "The time starts counting for everyone the moment you start the test, whether or not they have joined. Someone who joins 5 minutes late has 5 minutes less.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text(
+                    "Every player gets the full time from when they begin, even if they join after you start. Players can join up to the number of minutes below after you start, so the whole session lasts the duration plus this window.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    joinWindow, { joinWindow = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Late join window (minutes, 0 to 60)") }, singleLine = true,
+                    isError = !windowOk,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Text("When do players see their score and position?", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = scoreVisibility == "after_end", onClick = { scoreVisibility = "after_end" }, label = { Text("When the test ends") })
+                FilterChip(selected = scoreVisibility == "immediate", onClick = { scoreVisibility = "immediate" }, label = { Text("Right after they finish") })
+            }
+            Text(
+                if (scoreVisibility == "immediate") {
+                    "Each player sees their score and position as soon as they submit or their time runs out. The position can still change while others finish. The correct answers stay hidden until the test ends, so early finishers cannot pass them on."
+                } else {
+                    "Scores, positions and corrections all appear when the test ends (when the time is up or you end it)."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Notify everyone", style = MaterialTheme.typography.titleMedium)

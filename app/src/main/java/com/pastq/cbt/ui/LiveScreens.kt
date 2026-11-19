@@ -143,7 +143,11 @@ fun LivePlayScreen(onBack: () -> Unit) {
         scope.launch {
             submitting = true
             LiveManager.submit().fold(
-                onSuccess = { submitted = true },
+                onSuccess = {
+                    submitted = true
+                    // When the admin allows it, the score shows straight away instead of waiting for the next refresh.
+                    runCatching { LiveManager.results() }.getOrNull()?.let { if (it.ready) results = it }
+                },
                 onFailure = {
                     val m = it.friendlyMessage()
                     // "already submitted" or "closed" both mean there is nothing more to send.
@@ -167,15 +171,17 @@ fun LivePlayScreen(onBack: () -> Unit) {
                     if (s.questions.isNotEmpty()) questions = s.questions
                     deadline = System.currentTimeMillis() + s.seconds_left * 1000L
                 }
-                if (s.status == "ended") {
+                // Results are asked for once the session ended, or right after this player submitted when the admin shows scores immediately.
+                if (s.status == "ended" || (s.submitted && s.score_visibility == "immediate")) {
                     val r = LiveManager.results()
                     results = r
-                    if (r.ready) break
+                    if (r.ready && r.final) break
                 }
             } catch (e: Exception) {
                 error = e.friendlyMessage()
             }
-            delay(if (state?.status == "running" && !submitted) 7000 else 2500)
+            // Slower refresh while waiting for the session to end with the score already on screen.
+            delay(if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
         }
     }
     // Clock for the countdown.
@@ -235,6 +241,11 @@ fun LivePlayScreen(onBack: () -> Unit) {
                         CircularProgressIndicator()
                         Text("Waiting for the admin to start", style = MaterialTheme.typography.titleLarge)
                         Text("${s.players} joined · ${s.minutes} minutes · you are ${s.name}")
+                        Text(
+                            if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you start, even if you join late."
+                            else "The clock starts for everyone when the admin starts the test.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     s.status == "running" && submitted -> {
                         Text("Answers submitted", style = MaterialTheme.typography.titleLarge)
@@ -329,7 +340,10 @@ fun LiveResultsContent(r: LiveResults, onBack: () -> Unit) {
         topBar = { BackBar(r.title.ifBlank { "Live test results" }, onBack) },
         bottomBar = {
             BottomActionBar {
-                Button(onClick = { LiveManager.forget(); onBack() }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+                // While the test is still running, leaving must not forget the session or the corrections could never be shown.
+                Button(onClick = { if (r.final) LiveManager.forget(); onBack() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (r.final) "Done" else "Close for now")
+                }
             }
         },
     ) { pad ->
@@ -344,9 +358,15 @@ fun LiveResultsContent(r: LiveResults, onBack: () -> Unit) {
                         if (r.submitted) {
                             Text("${r.correct} / ${r.total}  (${"%.1f".format(pct)}%)", style = MaterialTheme.typography.headlineMedium)
                             Text(
-                                if (r.rank != null) "Position ${r.rank} of ${r.participants} who finished" else "Not ranked",
+                                if (r.rank != null) "Position ${r.rank} of ${r.participants} who finished" + (if (r.final) "" else " so far") else "Not ranked",
                                 style = MaterialTheme.typography.titleMedium,
                             )
+                            if (!r.final) {
+                                Text(
+                                    "Others are still taking the test, so your position can change. The corrections appear when the test ends; open this screen again then.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                             Text("Time used: ${formatTime(r.seconds)}", style = MaterialTheme.typography.bodyMedium)
                         } else {
                             Text("You did not submit answers before the session ended.", style = MaterialTheme.typography.titleMedium)
@@ -358,8 +378,10 @@ fun LiveResultsContent(r: LiveResults, onBack: () -> Unit) {
                 item { Text("Scoreboard", style = MaterialTheme.typography.titleMedium) }
                 items(r.board) { row -> BoardRow(row) }
             }
-            item { Text("Corrections", style = MaterialTheme.typography.titleMedium) }
-            items(r.review) { item -> ReviewCard(item) }
+            if (r.review.isNotEmpty()) {
+                item { Text("Corrections", style = MaterialTheme.typography.titleMedium) }
+                items(r.review) { item -> ReviewCard(item) }
+            }
             item { Text("", Modifier.padding(8.dp)) }
         }
     }
