@@ -56,6 +56,7 @@ import com.pastq.cbt.data.AdminSession
 import com.pastq.cbt.data.DisputedItem
 import com.pastq.cbt.data.DraftItem
 import com.pastq.cbt.data.LiveManager
+import com.pastq.cbt.data.QueueCounts
 import com.pastq.cbt.data.ReportInfo
 import com.pastq.cbt.data.Reporter
 import com.pastq.cbt.data.Repository
@@ -680,6 +681,10 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val reports = remember { mutableStateMapOf<String, List<ReportInfo>>() }
+    var counts by remember { mutableStateOf<QueueCounts?>(null) }
+
+    suspend fun loadCounts() { Reporter.adminCounts()?.let { counts = it } }
+    fun refreshCounts() { scope.launch { loadCounts() } }
 
     fun refreshList() {
         rows.clear(); reports.clear(); offset = 0; more = true; selected.clear(); reload++
@@ -735,6 +740,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
             error = e.friendlyMessage()
         }
         loading = false
+        loadCounts()
     }
 
     removing?.let { q ->
@@ -746,7 +752,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     val target = q; removing = null
                     scope.launch {
-                        try { LiveManager.adminRemove(target.id); rows.remove(target); selected.remove(target.id); error = null }
+                        try { LiveManager.adminRemove(target.id); rows.remove(target); selected.remove(target.id); error = null; refreshCounts() }
                         catch (e: Exception) { error = e.friendlyMessage() }
                     }
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
@@ -881,6 +887,20 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
         },
     ) { pad ->
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            counts?.let { c ->
+                item {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                if (c.left == 0) "All clear: nothing left to review" else "${c.left} question(s) left to review",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text("${c.disputed} disputed · ${c.unverifiable} could not be verified", style = MaterialTheme.typography.bodySmall)
+                            Text("${c.unchecked} not yet checked by the AI", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
             item {
                 Text(
                     "Questions the AI disputed or could not verify. Approve to keep the stored answer, pick the correct option to fix it, or remove the question. Approving or fixing counts it as confirmed. Tick questions to export a bulk selection, or use Export > Export all to save everything in one CSV file. Fill in the blank \"action\" column (approve, remove, or a/b/c/d/e) and use Import to apply your corrections in one go.",
@@ -943,7 +963,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                                 .forEach { (l, _) ->
                                     OutlinedButton(onClick = {
                                         scope.launch {
-                                            try { LiveManager.adminSetKey(q.id, l); rows.remove(q); selected.remove(q.id); error = null }
+                                            try { LiveManager.adminSetKey(q.id, l); rows.remove(q); selected.remove(q.id); error = null; refreshCounts() }
                                             catch (e: Exception) { error = e.friendlyMessage() }
                                         }
                                     }) { Text(l.uppercase()) }
@@ -952,7 +972,7 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(onClick = {
                                 scope.launch {
-                                    try { LiveManager.adminApprove(q.id); rows.remove(q); selected.remove(q.id); error = null }
+                                    try { LiveManager.adminApprove(q.id); rows.remove(q); selected.remove(q.id); error = null; refreshCounts() }
                                     catch (e: Exception) { error = e.friendlyMessage() }
                                 }
                             }, modifier = Modifier.weight(1f)) { Text("Approve as-is") }

@@ -13,6 +13,12 @@ import java.util.UUID
 @Serializable
 data class ReportInfo(val reason: String = "", val note: String = "", val created_at: String = "")
 
+/** How many questions still wait for the admin to review. */
+@Serializable
+data class QueueCounts(val disputed: Int = 0, val unverifiable: Int = 0, val unchecked: Int = 0) {
+    val left: Int get() = disputed + unverifiable
+}
+
 @Serializable
 private data class AdminReportsReply(val reports: Map<String, List<ReportInfo>> = emptyMap())
 
@@ -65,5 +71,16 @@ object Reporter {
             val raw = CloudApi.service.reportCall(key, "Bearer $key", token, body)
             LiveManager.json.decodeFromJsonElement<AdminReportsReply>(raw).reports
         }.getOrDefault(emptyMap())
+    }
+
+    /** Disputed / unverifiable / unchecked question totals (admin only). Null if signed out or the call fails. */
+    suspend fun adminCounts(): QueueCounts? {
+        val token = LiveManager.admin.value ?: return null
+        return runCatching {
+            val key = BuildConfig.SUPABASE_KEY
+            val body = buildJsonObject { put("action", "admin_counts") }
+            val raw = CloudApi.service.reportCall(key, "Bearer $key", token, body)
+            LiveManager.json.decodeFromJsonElement<QueueCounts>(raw)
+        }.getOrNull()
     }
 }
