@@ -150,6 +150,8 @@ fun LivePlayScreen(onBack: () -> Unit) {
     LaunchedEffect(questions) { QuestionImages.prefetch(ctx, questions.map { it.image }) }
     var error by remember { mutableStateOf<String?>(null) }
     var deadline by remember { mutableLongStateOf(0L) }
+    // When a scheduled test is due to start, on this phone's clock (0 = no schedule). Counted from the server's "seconds to go".
+    var startsAt by remember { mutableLongStateOf(0L) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var submitted by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
@@ -189,6 +191,7 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 val s = LiveManager.state()
                 error = null
                 state = s
+                startsAt = if (s.status == "waiting" && s.scheduled_start_at != null) System.currentTimeMillis() + s.starts_in_seconds * 1000L else 0L
                 if (s.submitted) submitted = true
                 if (s.locked) lockSeen = true
                 if (leftApp && s.status == "running" && !s.submitted && s.join_status == "approved" && !s.locked) {
@@ -213,7 +216,9 @@ fun LivePlayScreen(onBack: () -> Unit) {
             }
             // Slower refresh while waiting for the session to end with the score already on screen.
             val waitingOnAdmin = state?.join_status == "pending" || state?.locked == true || leftApp
-            delay(if (waitingOnAdmin) 3000 else if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
+            // In the last seconds before a scheduled start, ask every second so the test opens right on time.
+            val startingSoon = startsAt > 0L && startsAt - System.currentTimeMillis() < 8000
+            delay(if (startingSoon) 1000 else if (waitingOnAdmin) 3000 else if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
         }
     }
     // Clock for the countdown.
@@ -338,6 +343,19 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when {
+                    s.status == "waiting" && startsAt > 0L -> {
+                        val untilStart = ((startsAt - now) / 1000).toInt().coerceAtLeast(0)
+                        val startMs = parseIsoUtc(s.scheduled_start_at)
+                        Text("Starts in", style = MaterialTheme.typography.titleMedium)
+                        Text(countdownLabel(untilStart), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
+                        if (startMs != null) Text("Scheduled for ${formatWhen(startMs)}", style = MaterialTheme.typography.bodyMedium)
+                        Text("${s.players} joined · ${s.minutes} minutes · you are ${s.name}")
+                        Text(
+                            if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you begin."
+                            else "The test opens by itself at the start time and the clock runs for everyone. Keep this screen open.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     s.status == "waiting" -> {
                         CircularProgressIndicator()
                         Text("Waiting for the admin to start", style = MaterialTheme.typography.titleLarge)

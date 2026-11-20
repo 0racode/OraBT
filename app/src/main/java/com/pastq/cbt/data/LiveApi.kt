@@ -78,6 +78,10 @@ data class LiveState(
     val rejoin_requested: Boolean = false,
     /** Answers saved on the server (kept when the player left earlier), position -> letter. */
     val saved_answers: Map<String, String> = emptyMap(),
+    /** Scheduled start (ISO, UTC) while the test is waiting; null when the admin starts it by hand. */
+    val scheduled_start_at: String? = null,
+    /** Seconds until the scheduled start, counted by the server's clock. */
+    val starts_in_seconds: Int = 0,
 )
 
 @Serializable
@@ -131,6 +135,12 @@ data class AdminSession(
     /** Late-join and come-back requests waiting for the admin. */
     val requests: Int = 0,
     val auto_end: Boolean = false,
+    /** Players who join after the start are let in without asking the admin. */
+    val auto_approve_late: Boolean = false,
+    /** Scheduled start (ISO, UTC); null when the admin starts the test by hand. */
+    val scheduled_start_at: String? = null,
+    val starts_in_seconds: Int = 0,
+    val ends_at: String? = null,
 )
 
 @Serializable
@@ -324,6 +334,10 @@ object LiveManager {
 
     suspend fun adminStart(id: String): JsonObject = request("admin_start", true) { put("id", id) }
     suspend fun adminEnd(id: String): JsonObject = request("admin_end", true) { put("id", id) }
+
+    /** Sets or changes the start time of a test that has not started ([startAt] is ISO UTC), or clears it when null. */
+    suspend fun adminSchedule(id: String, startAt: String?): JsonObject =
+        request("admin_schedule", true) { put("id", id); if (startAt != null) put("start_at", startAt) }
     suspend fun adminDelete(id: String): JsonObject = request("admin_delete", true) { put("id", id) }
     suspend fun adminResults(id: String): AdminResults = request("admin_results", true) { put("id", id) }
     suspend fun adminRequests(id: String): AdminRequests = request("admin_requests", true) { put("id", id) }
@@ -347,10 +361,16 @@ object LiveManager {
         code: String = "",
         /** End the test automatically as soon as every player has submitted. */
         autoEnd: Boolean = false,
+        /** Optional scheduled start as an ISO UTC time. The test then starts by itself at that moment. */
+        startAt: String? = null,
+        /** Players who join after the start are let in without the admin (for tests nobody is watching). */
+        autoApproveLate: Boolean = false,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
         put("code", code)
         put("auto_end", autoEnd)
+        put("auto_approve_late", autoApproveLate)
+        if (startAt != null) put("start_at", startAt)
         put("announce", announce)
         put("minutes", minutes)
         put("timer_mode", timerMode)
