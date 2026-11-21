@@ -301,12 +301,17 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("You left the test", style = MaterialTheme.typography.titleLarge)
-                Text(
+                Text(if (s.strict_leave) "Your test has ended" else "You left the test", style = MaterialTheme.typography.titleLarge)
+                if (s.strict_leave) Text(
+                    "This test is strict: leaving the app closes it for you, and you cannot come back to it. Your answers so far are being graded.",
+                    style = MaterialTheme.typography.bodyMedium,
+                ) else Text(
                     "Leaving the app during a live test closes it for you. Your answers so far are saved. Ask the admin to let you back in; if they allow it you continue where you stopped, and the clock does not stop meanwhile.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (requestSent || s.rejoin_requested) {
+                if (s.strict_leave) {
+                    // No way back in a strict test.
+                } else if (requestSent || s.rejoin_requested) {
                     CircularProgressIndicator()
                     Text("Request sent. Waiting for the admin...", style = MaterialTheme.typography.titleSmall)
                 } else {
@@ -524,7 +529,7 @@ fun BoardRow(row: LiveBoardRow) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("#${row.rank}", fontWeight = FontWeight.Bold)
                 Column {
-                    Text(row.name + if (row.you) " (you)" else "", style = MaterialTheme.typography.bodyLarge)
+                    Text(row.name + (if (row.you) " (you)" else "") + (if (row.left) " (left app)" else ""), style = MaterialTheme.typography.bodyLarge)
                     Text(formatTime(row.seconds), style = MaterialTheme.typography.bodySmall)
                 }
             }

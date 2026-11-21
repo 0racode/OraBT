@@ -359,6 +359,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var scheduled by remember { mutableStateOf(false) }
     var startMillis by remember { mutableStateOf(defaultStartMillis()) }
     var autoApproveLate by remember { mutableStateOf(false) }
+    var strictLeave by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -506,6 +507,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     autoEnd = autoEnd,
                                     startAt = if (scheduled) isoUtc(startMillis) else null,
                                     autoApproveLate = scheduled && autoApproveLate,
+                                    strictLeave = strictLeave,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -628,9 +630,21 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
             Text(
                 (if (scheduled && autoApproveLate) "Players who join after the start are let in automatically. "
                 else "Players who join after you start must send a request, and you decide in the Requests list. ") +
-                    "Anyone who leaves the app during the test is locked out until you let them back in.",
+                    if (strictLeave) "Anyone who leaves the app during the test is closed out for good."
+                    else "Anyone who leaves the app during the test is locked out until you let them back in.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Strict mode (anti-malpractice)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (strictLeave) "A player who leaves the app, or goes offline for a minute, is closed out for good: answers so far are graded and they cannot return, even if you are offline. One phone can join only once."
+                        else "Off: you decide whether a player who left may come back.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                androidx.compose.material3.Switch(checked = strictLeave, onCheckedChange = { strictLeave = it })
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Notify everyone", style = MaterialTheme.typography.titleMedium)

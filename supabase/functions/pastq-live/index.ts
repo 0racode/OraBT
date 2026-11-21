@@ -18,6 +18,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 //                     started_at = the scheduled time, so it ends exactly duration (+ window) later. The admin can still
 //                     press Start earlier, or reschedule / clear the time while the session is waiting.
 //   auto_approve_late true: players who join after the start are let in without the admin (useful when nobody is watching)
+//   strict_leave      true (anti-malpractice, works with the admin offline): a player who leaves the app during the test is closed
+//                     out for good. Their answers so far are graded as submitted and there is no way back and no request to the admin.
+//                     A player who stops checking in for IDLE_MS (app killed, phone offline) is closed out the same way, by the
+//                     minute job or by their next call. A phone that already joined cannot join again under another name
+//                     (device_hash), and the app must send device_id to join, so old app versions cannot sidestep the rule.
 //
 // Scheduled starts and time-ups are applied in two ways, so they never depend on one thing alone:
 //   1. lazily, whenever anybody reads the session (refresh), and
@@ -34,6 +39,7 @@ const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GRACE_MS = 20000; // late submissions right after the timer ends are still accepted
 const PUSH_STALE_MS = 10 * 60000; // no "Live now" notice for a scheduled start that is more than 10 minutes old
 const MAX_SCHEDULE_AHEAD_MS = 60 * 86400000;
+const IDLE_MS = 60000; // strict tests: no check-in for this long counts as having left the app
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const cors = {
@@ -185,6 +191,34 @@ async function maybeAutoEnd(s: any) {
       method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "ended", ended_at: new Date().toISOString() }),
     });
   }
+}
+
+// Strict tests: closes a player out for good. Answers (the stored ones plus any sent now) are graded as submitted.
+async function closeAbsent(s: any, player: any, given: Record<string, unknown> = {}, atMs = Date.now()) {
+  if (player.submitted_at) return;
+  const g = await grade(s.id, { ...(player.answers ?? {}), ...given });
+  const base = player.started_at ?? s.started_at;
+  const started = base ? new Date(base).getTime() : atMs;
+  const seconds = Math.max(0, Math.min(s.duration_min * 60, Math.round((atMs - started) / 1000)));
+  await rest(`pastq_live_players?id=eq.${player.id}&submitted_at=is.null`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({
+      submitted_at: new Date().toISOString(), correct: g.correct, total: g.total, seconds, answers: g.saved,
+      locked: false, rejoin_requested: false, left_app: true, left_at: new Date(atMs).toISOString(),
+    }),
+  });
+}
+// A player who has seen the questions in a strict test but has not checked in for IDLE_MS.
+const vanished = (s: any, p: any) =>
+  !!s.strict_leave && p.join_status === "approved" && !!p.entered_at && !p.submitted_at && !!p.last_seen &&
+  Date.now() - new Date(p.last_seen).getTime() > IDLE_MS;
+// Closes out every vanished player of a strict session, then ends the session if everyone has now submitted.
+async function sweepVanished(s: any) {
+  if (!s.strict_leave) return;
+  const cut = enc(new Date(Date.now() - IDLE_MS).toISOString());
+  const rows = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&submitted_at=is.null&entered_at=not.is.null&last_seen=lt.${cut}&select=*`);
+  for (const p of rows) await closeAbsent(s, p, {}, new Date(p.last_seen).getTime());
+  if (rows.length) await maybeAutoEnd(s);
 }
 
 // ---------- Push notices (Firebase Cloud Messaging, HTTP v1) ----------
@@ -365,7 +399,9 @@ Deno.serve(async (req) => {
       const nowIso = enc(new Date().toISOString());
       const due = await get(`pastq_live_sessions?or=(and(status.eq.waiting,scheduled_start_at.lte.${nowIso}),and(status.eq.running,ends_at.lte.${nowIso}))&select=*&limit=50`);
       for (const s of due) await refresh(s);
-      return json({ ok: true, checked: due.length });
+      const strict = await get("pastq_live_sessions?status=eq.running&strict_leave=eq.true&select=*&limit=50");
+      for (const s of strict) await sweepVanished(s);
+      return json({ ok: true, checked: due.length, strict: strict.length });
     }
 
     // ===== admin login =====
@@ -393,6 +429,7 @@ Deno.serve(async (req) => {
         const announce = body.announce !== false;
         const autoEnd = body.auto_end === true;
         const autoApproveLate = body.auto_approve_late === true;
+        const strictLeave = body.strict_leave === true;
         const timerMode = body.timer_mode === "personal" ? "personal" : "shared";
         const scoreVisibility = body.score_visibility === "immediate" ? "immediate" : "after_end";
         const jw = Math.floor(Number(body.join_window_min));
@@ -448,7 +485,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             code, title, duration_min: minutes, subjects, announce, auto_end: autoEnd,
             timer_mode: timerMode, join_window_min: joinWindow, score_visibility: scoreVisibility,
-            scheduled_start_at: scheduledStart, auto_approve_late: autoApproveLate,
+            scheduled_start_at: scheduledStart, auto_approve_late: autoApproveLate, strict_leave: strictLeave,
           }),
         });
         if (cr.status === 409) return fail("That code is already used by another session. Choose a different one.", 409);
@@ -469,7 +506,7 @@ Deno.serve(async (req) => {
         return json({
           id: created.id, code, title, minutes, questions: items.length, subjects, announced: announce, timer_mode: timerMode,
           join_window_min: joinWindow, score_visibility: scoreVisibility, auto_end: autoEnd, auto_approve_late: autoApproveLate,
-          scheduled_start_at: scheduledStart,
+          strict_leave: strictLeave, scheduled_start_at: scheduledStart,
         });
       }
 
@@ -488,7 +525,7 @@ Deno.serve(async (req) => {
             questions: Number((items.headers.get("content-range") ?? "*/0").split("/")[1]) || 0,
             seconds_left: secondsLeft(s), created_at: s.created_at,
             timer_mode: s.timer_mode ?? "shared", join_window_min: s.join_window_min ?? 10, score_visibility: s.score_visibility ?? "after_end",
-            auto_end: !!s.auto_end, auto_approve_late: !!s.auto_approve_late,
+            auto_end: !!s.auto_end, auto_approve_late: !!s.auto_approve_late, strict_leave: !!s.strict_leave,
             scheduled_start_at: isoOrNull(s.scheduled_start_at), starts_in_seconds: startsInSeconds(s), ends_at: isoOrNull(s.ends_at),
           });
         }
@@ -546,10 +583,11 @@ Deno.serve(async (req) => {
       if (action === "admin_results") {
         const s = await sessionById(String(body.id ?? ""));
         if (!s) return fail("Session not found.", 404);
-        const players = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&select=name,correct,total,seconds,submitted_at&order=joined_at`);
+        await sweepVanished(s);
+        const players = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&select=name,correct,total,seconds,submitted_at,left_app&order=joined_at`);
         const ranked = players.filter((p) => p.submitted_at)
           .sort((a, b) => b.correct - a.correct || a.seconds - b.seconds)
-          .map((p, i) => ({ rank: i + 1, name: p.name, correct: p.correct, total: p.total, seconds: p.seconds }));
+          .map((p, i) => ({ rank: i + 1, name: p.name, correct: p.correct, total: p.total, seconds: p.seconds, left: !!p.left_app }));
         return json({
           title: s.title, code: s.code, status: s.status, seconds_left: secondsLeft(s),
           joined: players.map((p) => p.name), ranked,
@@ -699,6 +737,19 @@ Deno.serve(async (req) => {
       // After the start a new player waits for the admin, unless the admin chose to let late joiners in automatically.
       const late = s.status === "running";
       const joinStatus = late && !s.auto_approve_late ? "pending" : "approved";
+      // Strict tests: one phone, one entry. Leaving and coming back under another name is not possible.
+      let deviceHash: string | null = null;
+      if (s.strict_leave) {
+        const dev = clip(body.device_id, 100).trim();
+        if (dev.length < 8) return fail("Update the PastQ CBT app to join this test.");
+        deviceHash = await sha256(`pastq-live:${dev}`);
+        const prior = await get(`pastq_live_players?session_id=eq.${s.id}&device_hash=eq.${deviceHash}&select=id,entered_at`);
+        if (prior.length) {
+          if (s.status !== "waiting" || prior.some((p) => p.entered_at)) return fail("This phone has already joined this test. It cannot join again.", 409);
+          // Joined before the start and never opened the questions: the new entry replaces the old one.
+          await rest(`pastq_live_players?session_id=eq.${s.id}&device_hash=eq.${deviceHash}`, { method: "DELETE" });
+        }
+      }
       const token = randomToken();
       let r: Response | null = null;
       const base = name;
@@ -708,7 +759,7 @@ Deno.serve(async (req) => {
           method: "POST", headers: { Prefer: "return=minimal" },
           body: JSON.stringify({
             session_id: s.id, name, name_key: name.toLowerCase(), token_hash: await sha256(token),
-            join_status: joinStatus,
+            join_status: joinStatus, device_hash: deviceHash, last_seen: new Date().toISOString(),
           }),
         });
         if (r.status !== 409) break;
@@ -727,6 +778,14 @@ Deno.serve(async (req) => {
       const personal = s.timer_mode === "personal";
       const immediate = s.score_visibility === "immediate";
 
+      // Strict tests: a player who stopped checking in is closed out now (by their own next call at the latest).
+      if (vanished(s, player)) {
+        await closeAbsent(s, player, {}, new Date(player.last_seen).getTime());
+        if (s.status === "running") await maybeAutoEnd(s);
+        const fresh = (await get(`pastq_live_players?id=eq.${player.id}&select=*`))[0];
+        if (fresh) Object.assign(player, fresh);
+      }
+
       // Locked players whose session has ended are graded from the answers saved when they left.
       if (s.status === "ended" && player.locked && !player.submitted_at) {
         await submitStored(s, player);
@@ -738,6 +797,12 @@ Deno.serve(async (req) => {
         // The player left the app during the test: lock them out and keep the answers sent so far.
         if (s.status !== "running" || player.submitted_at || player.join_status !== "approved" || player.locked) return json({ ok: true });
         const given: Record<string, unknown> = body.answers && typeof body.answers === "object" ? body.answers : {};
+        if (s.strict_leave) {
+          // No way back: graded as submitted right now, whether or not the admin is online.
+          await closeAbsent(s, player, given);
+          await maybeAutoEnd(s);
+          return json({ ok: true, closed: true });
+        }
         const g = await grade(s.id, { ...(player.answers ?? {}), ...given });
         await rest(`pastq_live_players?id=eq.${player.id}&submitted_at=is.null`, {
           method: "PATCH", headers: { Prefer: "return=minimal" },
@@ -747,6 +812,7 @@ Deno.serve(async (req) => {
       }
 
       if (action === "rejoin_request") {
+        if (s.strict_leave) return fail("Leaving the app ended your test. You cannot come back to it.", 403);
         if (!player.locked || player.submitted_at) return fail("You are not locked out.");
         if (s.status !== "running") return fail("The session is not running any more.");
         await rest(`pastq_live_players?id=eq.${player.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ rejoin_requested: true }) });
@@ -762,6 +828,7 @@ Deno.serve(async (req) => {
           submitted: !!me.submitted_at, name: me.name,
           timer_mode: s.timer_mode ?? "shared", score_visibility: s.score_visibility ?? "after_end",
           join_status: me.join_status, locked: !!me.locked && !me.submitted_at, rejoin_requested: !!me.rejoin_requested,
+          strict_leave: !!s.strict_leave, left_app: !!me.left_app,
           scheduled_start_at: isoOrNull(s.scheduled_start_at), starts_in_seconds: startsInSeconds(s),
         };
         // Someone waiting for the admin's answer (or declined) gets no questions.
@@ -779,6 +846,17 @@ Deno.serve(async (req) => {
             ? Math.max(0, Math.round((new Date(me.started_at).getTime() + s.duration_min * 60000 - Date.now()) / 1000))
             : 0)
           : secondsLeft(s);
+        // Strict tests: note that this player has seen the questions, and that they are still here.
+        if (s.strict_leave && s.status === "running" && !me.submitted_at && !me.locked) {
+          const t = new Date().toISOString();
+          const fresh = me.last_seen ? Date.now() - new Date(me.last_seen).getTime() > 10000 : true;
+          const upd: Record<string, string> = {};
+          if (!me.entered_at) { upd.entered_at = t; upd.last_seen = t; } else if (fresh) upd.last_seen = t;
+          if (Object.keys(upd).length) {
+            await rest(`pastq_live_players?id=eq.${me.id}&submitted_at=is.null`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd) });
+            Object.assign(me, upd);
+          }
+        }
         if (s.status === "running" && !me.submitted_at && !me.locked) {
           out.questions = await get(`pastq_live_items?session_id=eq.${s.id}&select=pos,subject,section,question,a,b,c,d,e,image&order=pos`);
           // Answers saved when the player left earlier, so an allowed return carries on where they stopped.

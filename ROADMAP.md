@@ -73,6 +73,10 @@ The new questions are marked unchecked, so the nightly AI answer check covers th
 6. Live-session notifications (last): choose between a Firebase push (instant, needs a Firebase project) and a
    background check every ~15 minutes (no Firebase, delayed).
 
+## Strict live tests (2026-11-21)
+
+Optional "Strict mode" per test: leaving the app (or 60s without a check-in) closes the player out for good, graded as submitted, no rejoin and no admin approval, so it works with the admin offline. One phone can join once (device id). Needs the updated app.
+
 ## Scheduled live tests (2026-11-20)
 - The admin can set a start time when creating a test, or later with "Set a start time" / "Change start time" on a waiting test.
   The test starts by itself at that moment and ends at start + duration (plus the late-join window in personal-timer mode),
