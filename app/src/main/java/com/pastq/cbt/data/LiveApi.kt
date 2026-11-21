@@ -57,6 +57,8 @@ data class LiveBoardRow(
     val total: Int = 0,
     val seconds: Int = 0,
     val you: Boolean = false,
+    /** Strict test: this player left the app and was closed out. */
+    val left: Boolean = false,
 )
 
 @Serializable
@@ -78,6 +80,13 @@ data class LiveState(
     val rejoin_requested: Boolean = false,
     /** Answers saved on the server (kept when the player left earlier), position -> letter. */
     val saved_answers: Map<String, String> = emptyMap(),
+    /** Scheduled start (ISO, UTC) while the test is waiting; null when the admin starts it by hand. */
+    val scheduled_start_at: String? = null,
+    /** Seconds until the scheduled start, counted by the server's clock. */
+    val starts_in_seconds: Int = 0,
+    /** Strict test: leaving the app ends the test for good. */
+    val strict_leave: Boolean = false,
+    val left_app: Boolean = false,
 )
 
 @Serializable
@@ -131,6 +140,13 @@ data class AdminSession(
     /** Late-join and come-back requests waiting for the admin. */
     val requests: Int = 0,
     val auto_end: Boolean = false,
+    /** Players who join after the start are let in without asking the admin. */
+    val auto_approve_late: Boolean = false,
+    val strict_leave: Boolean = false,
+    /** Scheduled start (ISO, UTC); null when the admin starts the test by hand. */
+    val scheduled_start_at: String? = null,
+    val starts_in_seconds: Int = 0,
+    val ends_at: String? = null,
 )
 
 @Serializable
@@ -221,7 +237,8 @@ object LiveManager {
     }
 
     fun forget() {
-        prefs.edit().clear().apply()
+        // The device id stays, otherwise forgetting a session would let a phone join a strict test again.
+        prefs.edit().remove("code").remove("token").remove("name").remove("title").apply()
         _joined.value = null
         answers.value = emptyMap()
     }
@@ -264,12 +281,23 @@ object LiveManager {
     // ----- players -----
     /** [autoName] is true for signed-in players: the server adds a number if someone in the session already has that name. */
     suspend fun join(code: String, name: String, autoName: Boolean = false): Result<Joined> = runCatching {
-        val r: JoinReply = request("join") { put("code", code.trim()); put("name", name.trim()); put("auto_name", autoName) }
+        val r: JoinReply = request("join") { put("code", code.trim()); put("name", name.trim()); put("auto_name", autoName); put("device_id", deviceId()) }
         answers.value = emptyMap()
         val j = Joined(r.code, r.token, r.name, r.title)
         prefs.edit().putString("code", j.code).putString("token", j.token).putString("name", j.name).putString("title", j.title).apply()
         _joined.value = j
         j
+    }
+
+    /** A random id made once per install; strict tests use it so one phone cannot join twice under different names. */
+    private fun deviceId(): String {
+        val p = prefs
+        var id = p.getString("device", null)
+        if (id.isNullOrBlank()) {
+            id = java.util.UUID.randomUUID().toString()
+            p.edit().putString("device", id).apply()
+        }
+        return id
     }
 
     suspend fun state(): LiveState {
@@ -324,6 +352,10 @@ object LiveManager {
 
     suspend fun adminStart(id: String): JsonObject = request("admin_start", true) { put("id", id) }
     suspend fun adminEnd(id: String): JsonObject = request("admin_end", true) { put("id", id) }
+
+    /** Sets or changes the start time of a test that has not started ([startAt] is ISO UTC), or clears it when null. */
+    suspend fun adminSchedule(id: String, startAt: String?): JsonObject =
+        request("admin_schedule", true) { put("id", id); if (startAt != null) put("start_at", startAt) }
     suspend fun adminDelete(id: String): JsonObject = request("admin_delete", true) { put("id", id) }
     suspend fun adminResults(id: String): AdminResults = request("admin_results", true) { put("id", id) }
     suspend fun adminRequests(id: String): AdminRequests = request("admin_requests", true) { put("id", id) }
@@ -347,10 +379,19 @@ object LiveManager {
         code: String = "",
         /** End the test automatically as soon as every player has submitted. */
         autoEnd: Boolean = false,
+        /** Optional scheduled start as an ISO UTC time. The test then starts by itself at that moment. */
+        startAt: String? = null,
+        /** Players who join after the start are let in without the admin (for tests nobody is watching). */
+        autoApproveLate: Boolean = false,
+        /** Anti-malpractice: a player who leaves the app is closed out for good, even with the admin offline. */
+        strictLeave: Boolean = false,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
         put("code", code)
         put("auto_end", autoEnd)
+        put("auto_approve_late", autoApproveLate)
+        put("strict_leave", strictLeave)
+        if (startAt != null) put("start_at", startAt)
         put("announce", announce)
         put("minutes", minutes)
         put("timer_mode", timerMode)

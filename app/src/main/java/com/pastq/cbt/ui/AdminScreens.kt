@@ -129,6 +129,7 @@ fun AdminHomeScreen(
     var reload by remember { mutableStateOf(0) }
     var deleting by remember { mutableStateOf<AdminSession?>(null) }
     var requestsFor by remember { mutableStateOf<AdminSession?>(null) }
+    var schedulingFor by remember { mutableStateOf<AdminSession?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(admin) { if (admin == null) onBack() }
@@ -152,6 +153,41 @@ fun AdminHomeScreen(
     }
 
     requestsFor?.let { s -> RequestsDialog(s) { requestsFor = null; reload++ } }
+
+    schedulingFor?.let { s ->
+        val current = parseIsoUtc(s.scheduled_start_at)
+        var pick by remember(s.id) { mutableStateOf(current?.takeIf { it > System.currentTimeMillis() } ?: defaultStartMillis()) }
+        AlertDialog(
+            onDismissRequest = { schedulingFor = null },
+            title = { Text("Start time for \"${s.title}\"") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StartTimeField(pick) { pick = it }
+                    Text(
+                        "Starts at ${formatWhen(pick)} and ends at ${formatWhen(pick + s.minutes * 60_000L)}.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (pick <= System.currentTimeMillis()) {
+                        Text("Pick a time in the future.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = pick > System.currentTimeMillis(),
+                    onClick = { schedulingFor = null; act { LiveManager.adminSchedule(s.id, isoUtc(pick)) } },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    if (current != null) {
+                        TextButton(onClick = { schedulingFor = null; act { LiveManager.adminSchedule(s.id, null) } }) { Text("Remove time") }
+                    }
+                    TextButton(onClick = { schedulingFor = null }) { Text("Cancel") }
+                }
+            },
+        )
+    }
 
     deleting?.let { s ->
         AlertDialog(
@@ -187,8 +223,11 @@ fun AdminHomeScreen(
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(s.title, style = MaterialTheme.typography.titleMedium)
                                 Text("Code: ${s.code}", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                val startMs = parseIsoUtc(s.scheduled_start_at)
                                 val state = when (s.status) {
-                                    "waiting" -> "Waiting to start"
+                                    "waiting" ->
+                                        if (startMs != null) "Starts ${formatWhen(startMs)} (${countdownLabel(((startMs - System.currentTimeMillis()) / 1000).toInt())})"
+                                        else "Waiting to start"
                                     "running" -> "Running · ${formatTime(s.seconds_left)} left"
                                     else -> "Ended"
                                 }
@@ -198,8 +237,11 @@ fun AdminHomeScreen(
                                     Text("${s.requests} request(s) waiting for you", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                                 }
                                 if (s.subjects.isNotBlank()) Text(s.subjects, style = MaterialTheme.typography.bodySmall)
+                                if (s.status == "waiting") {
+                                    OutlinedButton(onClick = { schedulingFor = s }) { Text(if (s.scheduled_start_at != null) "Change start time" else "Set a start time") }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (s.status == "waiting") Button(onClick = { act { LiveManager.adminStart(s.id) } }) { Text("Start") }
+                                    if (s.status == "waiting") Button(onClick = { act { LiveManager.adminStart(s.id) } }) { Text(if (s.scheduled_start_at != null) "Start now" else "Start") }
                                     if (s.status == "running") Button(onClick = { act { LiveManager.adminEnd(s.id) } }) { Text("End now") }
                                     if (s.status == "running" || s.requests > 0) {
                                         OutlinedButton(onClick = { requestsFor = s }) { Text(if (s.requests > 0) "Requests (${s.requests})" else "Requests") }
@@ -314,6 +356,10 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var scoreVisibility by remember { mutableStateOf("after_end") }
     var customCode by remember { mutableStateOf("") }
     var autoEnd by remember { mutableStateOf(false) }
+    var scheduled by remember { mutableStateOf(false) }
+    var startMillis by remember { mutableStateOf(defaultStartMillis()) }
+    var autoApproveLate by remember { mutableStateOf(false) }
+    var strictLeave by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -432,7 +478,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     val total = pickTotal + manual.size
     val windowOk = timerMode != "personal" || (joinWindow.toIntOrNull() ?: -1) in 0..60
     val codeOk = customCode.isEmpty() || customCode.length in 4..12
-    val canCreate = !creating && timeOk && windowOk && codeOk && total in 1..200 && manual.all { it.valid }
+    val startOk = !scheduled || startMillis > System.currentTimeMillis()
+    val canCreate = !creating && timeOk && windowOk && codeOk && startOk && total in 1..200 && manual.all { it.valid }
 
     Scaffold(
         topBar = { BackBar("New live test", onBack) },
@@ -458,6 +505,9 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     scoreVisibility = scoreVisibility,
                                     code = customCode,
                                     autoEnd = autoEnd,
+                                    startAt = if (scheduled) isoUtc(startMillis) else null,
+                                    autoApproveLate = scheduled && autoApproveLate,
+                                    strictLeave = strictLeave,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -467,7 +517,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (creating) "Creating..." else "Create session") }
+                ) { Text(if (creating) "Creating..." else if (scheduled) "Schedule test" else "Create session") }
             }
         },
     ) { pad ->
@@ -484,6 +534,54 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 modifier = Modifier.fillMaxWidth(),
             )
             DurationInput(hours, mins, { hours = it }, { mins = it }, timeOk)
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Start at a set time", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (scheduled) "The test starts by itself at the time below, even if you are offline."
+                        else "Off: the test waits until you press Start.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = scheduled,
+                    onCheckedChange = {
+                        scheduled = it
+                        if (it) {
+                            // A scheduled test usually runs without the admin watching, so these two are switched on for you.
+                            autoEnd = true
+                            autoApproveLate = true
+                            if (startMillis < System.currentTimeMillis() + 60_000L) startMillis = defaultStartMillis()
+                        }
+                    },
+                )
+            }
+            if (scheduled) {
+                StartTimeField(startMillis) { startMillis = it }
+                if (!startOk) {
+                    Text("Pick a time in the future.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                // The shared clock runs for the duration. With personal timers the test stays open for the late-join window as well.
+                val lastMinutes = minutes + if (timerMode == "personal") (joinWindow.toIntOrNull() ?: 0) else 0
+                val endMillis = startMillis + lastMinutes * 60_000L
+                Text(
+                    "Starts at ${formatWhen(startMillis)} and ends at ${formatWhen(endMillis)}" +
+                        if (autoEnd) ", or sooner once everyone has submitted." else ".",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Let late joiners in automatically", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (autoApproveLate) "Anyone who joins after the start goes straight in. Their time still runs from the real start."
+                            else "Anyone who joins after the start waits for you to allow them, so someone must be watching.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    androidx.compose.material3.Switch(checked = autoApproveLate, onCheckedChange = { autoApproveLate = it })
+                }
+            }
 
             Text("When does each player's time start?", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -530,9 +628,23 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 androidx.compose.material3.Switch(checked = autoEnd, onCheckedChange = { autoEnd = it })
             }
             Text(
-                "Players who join after you start must send a request, and you decide in the Requests list. Anyone who leaves the app during the test is locked out until you let them back in.",
+                (if (scheduled && autoApproveLate) "Players who join after the start are let in automatically. "
+                else "Players who join after you start must send a request, and you decide in the Requests list. ") +
+                    if (strictLeave) "Anyone who leaves the app during the test is closed out for good."
+                    else "Anyone who leaves the app during the test is locked out until you let them back in.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Strict mode (anti-malpractice)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (strictLeave) "A player who leaves the app, or goes offline for a minute, is closed out for good: answers so far are graded and they cannot return, even if you are offline. One phone can join only once."
+                        else "Off: you decide whether a player who left may come back.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                androidx.compose.material3.Switch(checked = strictLeave, onCheckedChange = { strictLeave = it })
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Notify everyone", style = MaterialTheme.typography.titleMedium)

@@ -72,3 +72,21 @@ The new questions are marked unchecked, so the nightly AI answer check covers th
    are loaded from their server once and cached; consider mirroring if their bandwidth is a concern.
 6. Live-session notifications (last): choose between a Firebase push (instant, needs a Firebase project) and a
    background check every ~15 minutes (no Firebase, delayed).
+
+## Strict live tests (2026-11-21)
+
+Optional "Strict mode" per test: leaving the app (or 60s without a check-in) closes the player out for good, graded as submitted, no rejoin and no admin approval, so it works with the admin offline. One phone can join once (device id). Needs the updated app.
+
+## Scheduled live tests (2026-11-20)
+- The admin can set a start time when creating a test, or later with "Set a start time" / "Change start time" on a waiting test.
+  The test starts by itself at that moment and ends at start + duration (plus the late-join window in personal-timer mode),
+  or earlier when every player has submitted ("End when everyone has submitted").
+- Server: `scheduled_start_at` and `auto_approve_late` on `pastq_live_sessions`. The `pastq-live` function applies the start
+  when anyone reads the session and through a `tick` action that the `pastq-live-tick` cron job calls every minute, so a
+  test still starts with nobody online. The waiting -> running change is one conditional update, so the "Live now" notice is sent once.
+- Late joiners: with "Let late joiners in automatically" (on by default for scheduled tests) they go straight in; otherwise
+  they still wait for the admin's approval.
+- Known gaps: a player who leaves the app during the test is still locked until the admin lets them back in, which blocks
+  "end when everyone has submitted" until the time is up. Times are chosen on the admin's phone clock.
+- Server code now lives in `supabase/functions/pastq-live/index.ts` and the SQL in `supabase/migrations/`.
+  Deploy by pasting the file into the Supabase function (or via the Supabase CLI).
