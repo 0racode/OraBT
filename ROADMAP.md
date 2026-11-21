@@ -75,6 +75,8 @@ The new questions are marked unchecked, so the nightly AI answer check covers th
 
 ## Strict live tests (2026-11-21)
 
+Per-test switch "I may let people back in": a closed-out player can ask to return; the admin decides while online, otherwise the result stands. Strict tests show the rules before the questions open.
+
 Optional "Strict mode" per test: leaving the app (or 60s without a check-in) closes the player out for good, graded as submitted, no rejoin and no admin approval, so it works with the admin offline. One phone can join once (device id). Needs the updated app.
 
 ## Scheduled live tests (2026-11-20)

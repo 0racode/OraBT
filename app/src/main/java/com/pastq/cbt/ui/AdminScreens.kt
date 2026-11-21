@@ -360,6 +360,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var startMillis by remember { mutableStateOf(defaultStartMillis()) }
     var autoApproveLate by remember { mutableStateOf(false) }
     var strictLeave by remember { mutableStateOf(false) }
+    var strictReturn by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -508,6 +509,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     startAt = if (scheduled) isoUtc(startMillis) else null,
                                     autoApproveLate = scheduled && autoApproveLate,
                                     strictLeave = strictLeave,
+                                    strictReturn = strictLeave && strictReturn,
                                 )
                                 onCreated()
                             } catch (e: Exception) {
@@ -644,6 +646,19 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                     )
                 }
                 androidx.compose.material3.Switch(checked = strictLeave, onCheckedChange = { strictLeave = it })
+            }
+            if (strictLeave) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("I may let people back in", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (strictReturn) "Someone who left can ask to come back. You see the request in Requests and decide, only while you are online. If you do not answer, their result stands. Good for a test you attend, when a network or phone problem can happen."
+                            else "Off: nobody can come back after leaving, even if it was a network problem. Best for a public test you are not present at.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    androidx.compose.material3.Switch(checked = strictReturn, onCheckedChange = { strictReturn = it })
+                }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

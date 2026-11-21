@@ -160,6 +160,10 @@ fun LivePlayScreen(onBack: () -> Unit) {
     var leftApp by remember { mutableStateOf(false) }
     var lockSeen by remember { mutableStateOf(false) }
     var requestSent by remember { mutableStateOf(false) }
+    // Strict tests: the player has read the rules; closedOut = the server closed this player out; reqSeen = the server has shown the return request.
+    var rulesOk by remember { mutableStateOf(false) }
+    var closedOut by remember { mutableStateOf(false) }
+    var reqSeen by remember { mutableStateOf(false) }
     var requestError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -192,6 +196,12 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 error = null
                 state = s
                 startsAt = if (s.status == "waiting" && s.scheduled_start_at != null) System.currentTimeMillis() + s.starts_in_seconds * 1000L else 0L
+                if (s.strict_leave && s.left_app) closedOut = true
+                if (s.rejoin_requested) reqSeen = true else if (reqSeen) { reqSeen = false; requestSent = false }
+                if (closedOut && s.strict_leave && !s.left_app && !s.submitted && s.status == "running") {
+                    // The admin let this player back in: the entry was reopened with the saved answers.
+                    closedOut = false; submitted = false; leftApp = false; lockSeen = false; requestSent = false; reqSeen = false
+                }
                 if (s.submitted) submitted = true
                 if (s.locked) lockSeen = true
                 if (leftApp && s.status == "running" && !s.submitted && s.join_status == "approved" && !s.locked) {
@@ -215,7 +225,7 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 error = e.friendlyMessage()
             }
             // Slower refresh while waiting for the session to end with the score already on screen.
-            val waitingOnAdmin = state?.join_status == "pending" || state?.locked == true || leftApp
+            val waitingOnAdmin = state?.join_status == "pending" || state?.locked == true || leftApp || state?.left_app == true
             // In the last seconds before a scheduled start, ask every second so the test opens right on time.
             val startingSoon = startsAt > 0L && startsAt - System.currentTimeMillis() < 8000
             delay(if (startingSoon) 1000 else if (waitingOnAdmin) 3000 else if (results?.ready == true) 8000 else if (state?.status == "running" && !submitted) 7000 else 2500)
@@ -295,7 +305,7 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 Button(onClick = { LiveManager.forget(); onBack() }) { Text("Leave") }
             }
         }
-        s != null && s.status == "running" && !submitted && (leftApp || s.locked) -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
+        s != null && s.status == "running" && ((!submitted && (leftApp || s.locked)) || (s.strict_leave && (s.left_app || closedOut))) -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
             Column(
                 Modifier.padding(pad).padding(24.dp).fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
@@ -303,14 +313,15 @@ fun LivePlayScreen(onBack: () -> Unit) {
             ) {
                 Text(if (s.strict_leave) "Your test has ended" else "You left the test", style = MaterialTheme.typography.titleLarge)
                 if (s.strict_leave) Text(
-                    "This test is strict: leaving the app closes it for you, and you cannot come back to it. Your answers so far are being graded.",
+                    if (s.strict_return) "This test is strict: leaving the app closes it for you and your answers so far are graded. If you were cut off by a network or phone problem, ask the admin to let you back in. It only works while the admin is online and agrees; otherwise your result stands as it is."
+                    else "This test is strict: leaving the app closes it for you, and you cannot come back to it. Your answers so far are graded.",
                     style = MaterialTheme.typography.bodyMedium,
                 ) else Text(
                     "Leaving the app during a live test closes it for you. Your answers so far are saved. Ask the admin to let you back in; if they allow it you continue where you stopped, and the clock does not stop meanwhile.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (s.strict_leave) {
-                    // No way back in a strict test.
+                if (s.strict_leave && !s.strict_return) {
+                    // No way back in this strict test.
                 } else if (requestSent || s.rejoin_requested) {
                     CircularProgressIndicator()
                     Text("Request sent. Waiting for the admin...", style = MaterialTheme.typography.titleSmall)
@@ -337,6 +348,16 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 }
             }
         }
+        testing && s.strict_leave && !rulesOk -> Scaffold(topBar = { BackBar(s.title.ifBlank { "Live test" }, onBack) }) { pad ->
+            Column(
+                Modifier.padding(pad).padding(24.dp).fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                StrictRulesCard(s.strict_return)
+                Button(onClick = { rulesOk = true }) { Text("I understand. Show me the questions") }
+            }
+        }
         testing -> LiveTest(
             title = s.title, questions = questions, answers = answers, remaining = remaining,
             submitting = submitting, error = error, onBack = onBack, onSubmit = { confirm = true },
@@ -355,6 +376,7 @@ fun LivePlayScreen(onBack: () -> Unit) {
                         Text(countdownLabel(untilStart), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold)
                         if (startMs != null) Text("Scheduled for ${formatWhen(startMs)}", style = MaterialTheme.typography.bodyMedium)
                         Text("${s.players} joined · ${s.minutes} minutes · you are ${s.name}")
+                        if (s.strict_leave) StrictRulesCard(s.strict_return)
                         Text(
                             if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you begin."
                             else "The test opens by itself at the start time and the clock runs for everyone. Keep this screen open.",
@@ -365,6 +387,7 @@ fun LivePlayScreen(onBack: () -> Unit) {
                         CircularProgressIndicator()
                         Text("Waiting for the admin to start", style = MaterialTheme.typography.titleLarge)
                         Text("${s.players} joined · ${s.minutes} minutes · you are ${s.name}")
+                        if (s.strict_leave) StrictRulesCard(s.strict_return)
                         Text(
                             if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you start, even if you join late."
                             else "The clock starts for everyone when the admin starts the test.",
@@ -383,6 +406,25 @@ fun LivePlayScreen(onBack: () -> Unit) {
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
+        }
+    }
+}
+
+/** The rules of a strict test, shown while waiting and again before the questions open. */
+@Composable
+fun StrictRulesCard(returnAllowed: Boolean) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Strict test: read before you start", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("• Stay in this app. Leaving it (home button, another app, a call you answer in another screen, locking the phone) ends your test at once.", style = MaterialTheme.typography.bodyMedium)
+            Text("• Your answers so far are graded and your result is marked \"left app\" for the admin to see.", style = MaterialTheme.typography.bodyMedium)
+            Text("• Being offline or switched off for about a minute counts as leaving.", style = MaterialTheme.typography.bodyMedium)
+            Text("• This phone can join this test only once. Joining again under another name is blocked.", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (returnAllowed) "• If a network or phone problem cuts you off, you can ask the admin to let you back in. It only works if the admin is online and agrees."
+                else "• There is no way back in once your test has ended this way.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }

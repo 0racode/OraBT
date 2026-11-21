@@ -87,6 +87,8 @@ data class LiveState(
     /** Strict test: leaving the app ends the test for good. */
     val strict_leave: Boolean = false,
     val left_app: Boolean = false,
+    /** Strict test where a closed-out player may ask the admin to let them back in. */
+    val strict_return: Boolean = false,
 )
 
 @Serializable
@@ -143,6 +145,7 @@ data class AdminSession(
     /** Players who join after the start are let in without asking the admin. */
     val auto_approve_late: Boolean = false,
     val strict_leave: Boolean = false,
+    val strict_return: Boolean = false,
     /** Scheduled start (ISO, UTC); null when the admin starts the test by hand. */
     val scheduled_start_at: String? = null,
     val starts_in_seconds: Int = 0,
@@ -385,12 +388,15 @@ object LiveManager {
         autoApproveLate: Boolean = false,
         /** Anti-malpractice: a player who leaves the app is closed out for good, even with the admin offline. */
         strictLeave: Boolean = false,
+        /** With strictLeave: a closed-out player may ask to come back, and the admin decides (only while online). */
+        strictReturn: Boolean = false,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
         put("code", code)
         put("auto_end", autoEnd)
         put("auto_approve_late", autoApproveLate)
         put("strict_leave", strictLeave)
+        put("strict_return", strictReturn)
         if (startAt != null) put("start_at", startAt)
         put("announce", announce)
         put("minutes", minutes)

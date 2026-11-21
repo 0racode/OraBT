@@ -24,6 +24,10 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 //                     minute job or by their next call. A phone that already joined cannot join again under another name
 //                     (device_hash), and the app must send device_id to join, so old app versions cannot sidestep the rule.
 //
+//   strict_return     true (needs strict_leave): a closed-out player may send a request to come back. Only when the admin allows it
+//                     (admin online) is their entry reopened with the saved answers and their clock still running; otherwise the
+//                     closed-out grade stands.
+//
 // Scheduled starts and time-ups are applied in two ways, so they never depend on one thing alone:
 //   1. lazily, whenever anybody reads the session (refresh), and
 //   2. by the "tick" action that a pg_cron job calls every minute (job token "live-tick" in pastq_jobs).
@@ -39,6 +43,7 @@ const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GRACE_MS = 20000; // late submissions right after the timer ends are still accepted
 const PUSH_STALE_MS = 10 * 60000; // no "Live now" notice for a scheduled start that is more than 10 minutes old
 const MAX_SCHEDULE_AHEAD_MS = 60 * 86400000;
+const RETURN_HOLD_MS = 5 * 60000; // strict tests that allow a return: auto-end waits this long after someone is closed out
 const IDLE_MS = 60000; // strict tests: no check-in for this long counts as having left the app
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -185,8 +190,11 @@ async function submitStored(s: any, player: any) {
 // Ends a running session early when the admin chose "end when everyone has submitted" and everyone has.
 async function maybeAutoEnd(s: any) {
   if (!s || !s.auto_end || s.status !== "running") return;
-  const ps = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&select=submitted_at`);
-  if (ps.length >= 1 && ps.every((p) => p.submitted_at)) {
+  const ps = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&select=submitted_at,left_app,left_at`);
+  // When closed-out players may ask to come back, the test waits a few minutes before ending on their account.
+  const holdAfter = Date.now() - RETURN_HOLD_MS;
+  const held = (p: any) => !!s.strict_return && !!p.left_app && !!p.left_at && new Date(p.left_at).getTime() > holdAfter;
+  if (ps.length >= 1 && ps.every((p) => p.submitted_at && !held(p))) {
     await rest(`pastq_live_sessions?id=eq.${s.id}&status=eq.running`, {
       method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "ended", ended_at: new Date().toISOString() }),
     });
@@ -400,7 +408,7 @@ Deno.serve(async (req) => {
       const due = await get(`pastq_live_sessions?or=(and(status.eq.waiting,scheduled_start_at.lte.${nowIso}),and(status.eq.running,ends_at.lte.${nowIso}))&select=*&limit=50`);
       for (const s of due) await refresh(s);
       const strict = await get("pastq_live_sessions?status=eq.running&strict_leave=eq.true&select=*&limit=50");
-      for (const s of strict) await sweepVanished(s);
+      for (const s of strict) { await sweepVanished(s); await maybeAutoEnd(s); }
       return json({ ok: true, checked: due.length, strict: strict.length });
     }
 
@@ -430,6 +438,7 @@ Deno.serve(async (req) => {
         const autoEnd = body.auto_end === true;
         const autoApproveLate = body.auto_approve_late === true;
         const strictLeave = body.strict_leave === true;
+        const strictReturn = strictLeave && body.strict_return === true;
         const timerMode = body.timer_mode === "personal" ? "personal" : "shared";
         const scoreVisibility = body.score_visibility === "immediate" ? "immediate" : "after_end";
         const jw = Math.floor(Number(body.join_window_min));
@@ -485,7 +494,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             code, title, duration_min: minutes, subjects, announce, auto_end: autoEnd,
             timer_mode: timerMode, join_window_min: joinWindow, score_visibility: scoreVisibility,
-            scheduled_start_at: scheduledStart, auto_approve_late: autoApproveLate, strict_leave: strictLeave,
+            scheduled_start_at: scheduledStart, auto_approve_late: autoApproveLate, strict_leave: strictLeave, strict_return: strictReturn,
           }),
         });
         if (cr.status === 409) return fail("That code is already used by another session. Choose a different one.", 409);
@@ -506,7 +515,7 @@ Deno.serve(async (req) => {
         return json({
           id: created.id, code, title, minutes, questions: items.length, subjects, announced: announce, timer_mode: timerMode,
           join_window_min: joinWindow, score_visibility: scoreVisibility, auto_end: autoEnd, auto_approve_late: autoApproveLate,
-          strict_leave: strictLeave, scheduled_start_at: scheduledStart,
+          strict_leave: strictLeave, strict_return: strictReturn, scheduled_start_at: scheduledStart,
         });
       }
 
@@ -515,17 +524,17 @@ Deno.serve(async (req) => {
         const out = [];
         for (const raw of sessions) {
           const s = await refresh(raw);
-          const players = await get(`pastq_live_players?session_id=eq.${s.id}&select=id,submitted_at,join_status,locked,rejoin_requested`);
+          const players = await get(`pastq_live_players?session_id=eq.${s.id}&select=id,submitted_at,join_status,locked,rejoin_requested,left_app`);
           const joined = players.filter((p) => p.join_status === "approved");
           const items = await rest(`pastq_live_items?session_id=eq.${s.id}&select=pos`, { headers: { Prefer: "count=exact", Range: "0-0" } });
           out.push({
             id: s.id, code: s.code, title: s.title, minutes: s.duration_min, status: s.status, subjects: s.subjects,
             players: joined.length, submitted: joined.filter((p) => p.submitted_at).length,
-            requests: players.filter((p) => p.join_status === "pending" || (p.locked && p.rejoin_requested && !p.submitted_at)).length,
+            requests: players.filter((p) => p.join_status === "pending" || (p.rejoin_requested && ((p.locked && !p.submitted_at) || (p.left_app && p.submitted_at)))).length,
             questions: Number((items.headers.get("content-range") ?? "*/0").split("/")[1]) || 0,
             seconds_left: secondsLeft(s), created_at: s.created_at,
             timer_mode: s.timer_mode ?? "shared", join_window_min: s.join_window_min ?? 10, score_visibility: s.score_visibility ?? "after_end",
-            auto_end: !!s.auto_end, auto_approve_late: !!s.auto_approve_late, strict_leave: !!s.strict_leave,
+            auto_end: !!s.auto_end, auto_approve_late: !!s.auto_approve_late, strict_leave: !!s.strict_leave, strict_return: !!s.strict_return,
             scheduled_start_at: isoOrNull(s.scheduled_start_at), starts_in_seconds: startsInSeconds(s), ends_at: isoOrNull(s.ends_at),
           });
         }
@@ -598,7 +607,7 @@ Deno.serve(async (req) => {
       if (action === "admin_requests") {
         const s = await sessionById(String(body.id ?? ""));
         if (!s) return fail("Session not found.", 404);
-        const rows = await get(`pastq_live_players?session_id=eq.${s.id}&or=(join_status.eq.pending,and(locked.eq.true,rejoin_requested.eq.true,submitted_at.is.null))&select=id,name,join_status,locked,left_at,joined_at&order=joined_at`);
+        const rows = await get(`pastq_live_players?session_id=eq.${s.id}&or=(join_status.eq.pending,and(locked.eq.true,rejoin_requested.eq.true,submitted_at.is.null),and(left_app.eq.true,rejoin_requested.eq.true,submitted_at.not.is.null))&select=id,name,join_status,locked,left_at,joined_at&order=joined_at`);
         return json({
           status: s.status,
           requests: rows.map((p) => ({ player_id: p.id, name: p.name, kind: p.join_status === "pending" ? "join" : "rejoin" })),
@@ -624,6 +633,18 @@ Deno.serve(async (req) => {
           } else {
             await submitStored(s, p);
             await maybeAutoEnd(s);
+          }
+        } else if (p.left_app && p.submitted_at && p.rejoin_requested) {
+          // Strict test, closed-out player asking to come back.
+          if (allow) {
+            if (!s.strict_return) return fail("Coming back is not allowed in this test.");
+            if (s.status !== "running") return fail("The session is not running any more.");
+            await patch({
+              submitted_at: null, correct: null, total: null, seconds: null, left_app: false, left_at: null,
+              locked: false, rejoin_requested: false, last_seen: new Date().toISOString(),
+            });
+          } else {
+            await patch({ rejoin_requested: false });
           }
         } else {
           return fail("That request is no longer open.");
@@ -767,7 +788,7 @@ Deno.serve(async (req) => {
       if (r!.status === 409) return fail("That name is already taken in this session. Choose another.", 409);
       if (!r!.ok) return fail("Could not join.", 500);
       await addEvent("live_join", ip);
-      return json({ token, name, code: s.code, title: s.title, join_status: joinStatus });
+      return json({ token, name, code: s.code, title: s.title, join_status: joinStatus, strict_leave: !!s.strict_leave, strict_return: !!s.strict_return });
     }
 
     if (action === "state" || action === "submit" || action === "results" || action === "leave" || action === "rejoin_request") {
@@ -812,7 +833,13 @@ Deno.serve(async (req) => {
       }
 
       if (action === "rejoin_request") {
-        if (s.strict_leave) return fail("Leaving the app ended your test. You cannot come back to it.", 403);
+        if (s.strict_leave) {
+          if (!s.strict_return) return fail("Leaving the app ended your test. You cannot come back to it.", 403);
+          if (!player.left_app || !player.submitted_at) return fail("You are not closed out.");
+          if (s.status !== "running") return fail("The session is not running any more.");
+          await rest(`pastq_live_players?id=eq.${player.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ rejoin_requested: true }) });
+          return json({ ok: true });
+        }
         if (!player.locked || player.submitted_at) return fail("You are not locked out.");
         if (s.status !== "running") return fail("The session is not running any more.");
         await rest(`pastq_live_players?id=eq.${player.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ rejoin_requested: true }) });
@@ -828,7 +855,7 @@ Deno.serve(async (req) => {
           submitted: !!me.submitted_at, name: me.name,
           timer_mode: s.timer_mode ?? "shared", score_visibility: s.score_visibility ?? "after_end",
           join_status: me.join_status, locked: !!me.locked && !me.submitted_at, rejoin_requested: !!me.rejoin_requested,
-          strict_leave: !!s.strict_leave, left_app: !!me.left_app,
+          strict_leave: !!s.strict_leave, strict_return: !!s.strict_return, left_app: !!me.left_app,
           scheduled_start_at: isoOrNull(s.scheduled_start_at), starts_in_seconds: startsInSeconds(s),
         };
         // Someone waiting for the admin's answer (or declined) gets no questions.
