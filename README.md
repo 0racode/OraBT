@@ -56,3 +56,6 @@ Add these three repository secrets (Settings, Secrets and variables, Actions) an
 - `KEYSTORE_BASE64`
 - `KEYSTORE_PASSWORD`
 - `KEY_ALIAS`
+
+## Web version (iPhone and any browser)
+`web/` is a free, installable web app with practice mode, the CBT exam (UTME preset or custom), results and answer review. It works offline after the first visit and uses the same bundled questions as the Android app. Every push to `main` that touches `web/` publishes it to GitHub Pages (Settings, Pages, Source: GitHub Actions). On iPhone: open the link in Safari, tap Share, then Add to Home Screen. It does not include live tests or push notices yet.

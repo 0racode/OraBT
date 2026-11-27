@@ -1,0 +1,44 @@
+name: Publish web app
+
+# Publishes the iPhone/any-browser version (web/) to GitHub Pages.
+on:
+  push:
+    branches: [main, master]
+    paths: ['web/**', 'app/src/main/assets/questions.json', '.github/workflows/web.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          mkdir site
+          cp -r web/. site/
+          # One copy of the question bank, shared with the Android app.
+          cp app/src/main/assets/questions.json site/questions.json
+          # New cache name each deploy so phones pick up updates.
+          sed -i "s/pastq-web-1/pastq-web-${GITHUB_RUN_NUMBER}/" site/sw.js
+          touch site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
