@@ -152,6 +152,7 @@ function home() {
     ${tip}${resume}
     <button class="tile" data-act="go" data-to="#/practice"><b>Practice</b><span>Pick a subject and get instant feedback</span></button>
     <button class="tile" data-act="go" data-to="#/exam"><b>CBT exam</b><span>Timed exam like the real UTME</span></button>
+    <button class="tile" data-act="go" data-to="#/live"><b>Live test</b><span>${typeof L !== 'undefined' && L.cfg ? 'You are in "' + esc(L.cfg.title) + '". Tap to continue' : 'Join your teacher\'s test with a code'}</span></button>
     <button class="tile" data-act="go" data-to="#/results"><b>Past results</b><span>${results.length ? results.length + ' saved on this phone' : 'Nothing yet'}</span></button>
     <p class="muted small" style="margin-top:1.5rem">Questions come from MySchool, Nigerianscholar (Ulearngo), ALOC, ExamWiseNG and NAIJAPREP, used with permission or open licence. Free, no ads.</p>
   </div>`;
@@ -397,7 +398,8 @@ function route(keep) {
   stopTimer();
   closeModal();
   let html;
-  switch (h) {
+  const live = typeof liveRoute === 'function' ? liveRoute(h) : null;
+  if (live !== null) { html = live; } else switch (h) {
     case '#/practice': html = practiceSetup(); break;
     case '#/practice/run': html = practiceRun(); break;
     case '#/practice/done': html = practiceDone(); break;
@@ -468,7 +470,7 @@ function keepTimerRender(keep) { route(keep); } // route() restarts the timer fo
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-act]');
   if (!el || el.disabled) return;
-  const fn = ACTIONS[el.dataset.act];
+  const fn = ACTIONS[el.dataset.act] || (typeof LIVE_ACTIONS !== 'undefined' ? LIVE_ACTIONS[el.dataset.act] : null);
   if (fn) fn(el);
 });
 document.addEventListener('change', (ev) => {
