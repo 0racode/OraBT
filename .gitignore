@@ -8,3 +8,6 @@ captures/
 .cxx/
 *.keystore
 *.jks
+
+# Copied from app/src/main/assets at deploy time
+web/questions.json
