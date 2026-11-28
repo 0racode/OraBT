@@ -49,6 +49,13 @@ have their own. Options can be `a`-`d` or a single `options` list of four. See
 Question, option, section and explanation text may use `<b>`, `<i>`, `<u>`, `<sub>`, `<sup>` and entities such as `&nbsp;`
 and `&amp;`; they are displayed as formatting, not as raw tags.
 
+## Several subjects in one test
+
+A test can mix up to **4 subjects** (bank picks, pasted, typed and imported questions together). They all share the same
+duration. Questions stay grouped by subject, in the order the subjects were added, and are shuffled only within a subject.
+In the admin screen (app and web) use **Add another subject** to paste a separate block per subject; **Tidy all with AI**
+tidies every block and tags each question with its subject. Names that differ only by case or spacing count as one subject.
+
 ## What gets skipped
 
 A row is skipped (and listed in the preview) when the question is empty, an option is empty, the answer is missing, or the

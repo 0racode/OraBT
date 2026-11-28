@@ -323,6 +323,10 @@ private fun RequestsDialog(session: AdminSession, onClose: () -> Unit) {
     )
 }
 
+private const val MAX_TEST_SUBJECTS = 4
+
+private data class PasteBlock(val subject: String = "", val text: String = "")
+
 private data class ManualDraft(
     val question: String = "",
     val section: String = "",
@@ -346,8 +350,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var mins by remember { mutableStateOf("40") }
     val picks = remember { mutableStateMapOf<String, String>() }
     val manual = remember { mutableStateListOf<ManualDraft>() }
-    var paste by remember { mutableStateOf("") }
-    var pasteSubject by remember { mutableStateOf("") }
+    val pasteBlocks = remember { mutableStateListOf(PasteBlock()) }
     var drafting by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var announce by remember { mutableStateOf(true) }
@@ -477,17 +480,23 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     val timeOk = minutes in 1..120
     val pickTotal = picks.values.sumOf { it.toIntOrNull() ?: 0 }
     val total = pickTotal + manual.size
+    // Up to 4 subjects share one test and one timer. Names that differ only by case or spacing count as one.
+    val subjectKeys = (picks.filter { (it.value.toIntOrNull() ?: 0) > 0 }.keys + manual.map { it.subject.ifBlank { "Custom" } })
+        .map { it.trim().lowercase().replace(Regex("\\s+"), " ") }.toSet()
+    val subjectCount = subjectKeys.size
+    val subjectsOk = subjectCount <= MAX_TEST_SUBJECTS
     val windowOk = timerMode != "personal" || (joinWindow.toIntOrNull() ?: -1) in 0..60
     val codeOk = customCode.isEmpty() || customCode.length in 4..12
     val startOk = !scheduled || startMillis > System.currentTimeMillis()
-    val canCreate = !creating && timeOk && windowOk && codeOk && startOk && total in 1..200 && manual.all { it.valid }
+    val canCreate = !creating && timeOk && windowOk && codeOk && startOk && subjectsOk && total in 1..200 && manual.all { it.valid }
 
     Scaffold(
         topBar = { BackBar("New live test", onBack) },
         bottomBar = {
             BottomActionBar {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Text("$total question(s) · ${if (timeOk) "$minutes minutes" else "set a time"}", style = MaterialTheme.typography.bodyMedium)
+                if (!subjectsOk) Text("A test can have at most $MAX_TEST_SUBJECTS subjects. This one has $subjectCount.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text("$total question(s) · $subjectCount subject(s) · ${if (timeOk) "$minutes minutes" else "set a time"}", style = MaterialTheme.typography.bodyMedium)
                 Button(
                     enabled = canCreate,
                     onClick = {
@@ -691,39 +700,73 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("Import CSV / JSON file") }
                 TextButton(onClick = { showGuide = true }) { Text("File format") }
             }
-            OutlinedTextField(pasteSubject, { pasteSubject = it.take(60) }, label = { Text("Subject (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(paste, { paste = it.take(12000) }, label = { Text("Paste questions here") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+            Text(
+                "You can paste for up to $MAX_TEST_SUBJECTS subjects. They all share the same time. Questions stay grouped by subject, in the order you add them.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            val usedBlocks = pasteBlocks.filter { it.text.trim().length >= 5 }
+            val subjectsNamed = usedBlocks.size <= 1 || usedBlocks.all { it.subject.isNotBlank() }
+            pasteBlocks.forEachIndexed { bi, blk ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Subject ${bi + 1}", style = MaterialTheme.typography.titleSmall)
+                            if (pasteBlocks.size > 1) TextButton(onClick = { pasteBlocks.removeAt(bi) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                        }
+                        OutlinedTextField(
+                            blk.subject, { pasteBlocks[bi] = blk.copy(subject = it.take(60)) },
+                            label = { Text(if (pasteBlocks.size > 1) "Subject name" else "Subject (optional)") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            blk.text, { pasteBlocks[bi] = blk.copy(text = it.take(12000)) },
+                            label = { Text("Paste ${blk.subject.ifBlank { "questions" }} questions here") },
+                            minLines = 4, modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+            if (!subjectsNamed) Text("Give each subject a name before you tidy.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (pasteBlocks.size < MAX_TEST_SUBJECTS) {
+                OutlinedButton(onClick = { pasteBlocks.add(PasteBlock()) }) { Text("Add another subject (${pasteBlocks.size}/$MAX_TEST_SUBJECTS)") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    enabled = !drafting && paste.trim().length >= 5,
+                    enabled = !drafting && usedBlocks.isNotEmpty() && subjectsNamed,
                     onClick = {
                         scope.launch {
                             drafting = true; error = null
                             try {
-                                val r = LiveManager.adminDraft(paste, pasteSubject)
-                                if (r.items.isEmpty()) error = "The AI found no questions in that text."
-                                r.items.forEach { it ->
-                                    manual.add(
-                                        ManualDraft(
-                                            it.question, it.section, it.a, it.b, it.c, it.d, it.explanation,
-                                            it.suggested_answer.firstOrNull()?.takeIf { ch -> ch in "abcd" },
-                                            note = listOfNotNull(
-                                                if (!it.had_options) "The AI wrote the options. Check them." else null,
-                                                if (!it.confident) "The AI is not sure of the answer. Check it." else null,
-                                            ).joinToString(" ").ifBlank { "AI suggests the answer shown. Check it." },
-                                            subject = it.subject,
+                                var found = 0
+                                // One AI call per subject, in the order shown. A failure keeps the blocks already tidied.
+                                for ((bi, blk) in pasteBlocks.withIndex()) {
+                                    if (blk.text.trim().length < 5) continue
+                                    val r = LiveManager.adminDraft(blk.text, blk.subject.trim())
+                                    r.items.forEach { it ->
+                                        manual.add(
+                                            ManualDraft(
+                                                it.question, it.section, it.a, it.b, it.c, it.d, it.explanation,
+                                                it.suggested_answer.firstOrNull()?.takeIf { ch -> ch in "abcd" },
+                                                note = listOfNotNull(
+                                                    if (!it.had_options) "The AI wrote the options. Check them." else null,
+                                                    if (!it.confident) "The AI is not sure of the answer. Check it." else null,
+                                                ).joinToString(" ").ifBlank { "AI suggests the answer shown. Check it." },
+                                                subject = it.subject,
+                                            )
                                         )
-                                    )
+                                    }
+                                    found += r.items.size
+                                    if (r.items.isNotEmpty()) pasteBlocks[bi] = blk.copy(text = "")
                                 }
-                                if (r.items.isNotEmpty()) paste = ""
+                                if (found == 0) error = "The AI found no questions in that text."
                             } catch (e: Exception) {
                                 error = e.friendlyMessage()
                             }
                             drafting = false
                         }
                     },
-                ) { Text(if (drafting) "Tidying..." else "Tidy with AI") }
-                OutlinedButton(onClick = { manual.add(ManualDraft(subject = pasteSubject)) }) { Text("Add blank question") }
+                ) { Text(if (drafting) "Tidying..." else if (usedBlocks.size > 1) "Tidy all with AI" else "Tidy with AI") }
+                OutlinedButton(onClick = { manual.add(ManualDraft(subject = pasteBlocks.firstOrNull()?.subject.orEmpty())) }) { Text("Add blank question") }
             }
 
             manual.forEachIndexed { i, m ->
@@ -734,6 +777,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                             TextButton(onClick = { manual.removeAt(i) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
                         }
                         m.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                        OutlinedTextField(m.subject, { manual[i] = m.copy(subject = it.take(60)) }, label = { Text("Subject") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(m.question, { manual[i] = m.copy(question = it) }, label = { Text("Question") }, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(m.a, { manual[i] = m.copy(a = it) }, label = { Text("A") }, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(m.b, { manual[i] = m.copy(b = it) }, label = { Text("B") }, modifier = Modifier.fillMaxWidth())

@@ -365,6 +365,8 @@ const DRAFT_SCHEMA = {
   },
 };
 
+const MAX_SUBJECTS = 4;
+
 // ---------- cleaning of admin-supplied items ----------
 function cleanItem(x: any, fallbackSubject: string) {
   const o = {
@@ -486,7 +488,21 @@ Deno.serve(async (req) => {
         }
         if (items.length < 1) return fail("Add at least one question.");
         if (items.length > 200) return fail("Too many questions (200 max).");
-        shuffle(items);
+        // Up to 4 subjects share one test and one timer. Subjects keep the order they were added in (bank picks first,
+        // then pasted/typed questions); questions are shuffled only within their own subject. Names that differ only
+        // by case or spacing count as the same subject.
+        const groups = new Map<string, any[]>();
+        const labels = new Map<string, string>();
+        for (const it of items) {
+          const label = String(it.subject || "Custom").trim() || "Custom";
+          const key = label.toLowerCase().replace(/\s+/g, " ");
+          if (!groups.has(key)) { groups.set(key, []); labels.set(key, label); }
+          it.subject = labels.get(key)!;
+          groups.get(key)!.push(it);
+        }
+        if (groups.size > MAX_SUBJECTS) return fail(`A test can have at most ${MAX_SUBJECTS} subjects. This one has ${groups.size}.`);
+        items.length = 0;
+        for (const g of groups.values()) { shuffle(g); items.push(...g); }
         const code = wanted || await newCode();
         const subjects = [...new Set(items.map((i) => i.subject))].join(", ").slice(0, 200);
         const cr = await rest("pastq_live_sessions", {

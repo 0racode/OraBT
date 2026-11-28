@@ -429,8 +429,41 @@ function adminListHtml() {
     ${L.a.sessions.length ? L.a.sessions.map(sessionCard).join('') : '<p class="muted">No sessions yet.</p>'}</div>`;
 }
 function newFormInit() {
-  return { title: '', minutes: 40, picks: {}, timer_mode: 'shared', join_window_min: 10, score_visibility: 'after_end',
+  return { title: '', minutes: 40, picks: {}, blocks: [{ subject: '', text: '' }], manual: [], drafting: false, timer_mode: 'shared', join_window_min: 10, score_visibility: 'after_end',
     code: '', auto_end: false, auto_approve_late: false, strict_leave: false, strict_return: false, announce: true, start_at: '', busy: false, error: '', done: null };
+}
+const MAX_SUBJECTS = 4;
+const subjKey = (x) => String(x || 'Custom').trim().toLowerCase().replace(/\s+/g, ' ') || 'custom';
+function formSubjects(f) {
+  const keys = new Set();
+  Object.entries(f.picks).forEach(([k, v]) => { if (Number(v) > 0) keys.add(subjKey(k)); });
+  f.manual.forEach((m) => keys.add(subjKey(m.subject)));
+  return keys.size;
+}
+const taField = 'width:100%;font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;';
+function pasteBlocksHtml(f) {
+  const used = f.blocks.filter((b) => b.text.trim().length >= 5);
+  const named = used.length <= 1 || used.every((b) => b.subject.trim());
+  return `<h2>Your own questions</h2>
+    <p class="muted small">Paste questions, with or without options. The AI tidies them and, when a question has no options, writes four. It never adds questions you did not paste. You confirm every correct answer. You can use up to ${MAX_SUBJECTS} subjects in one test; they all share the same time and stay grouped in the order you add them.</p>
+    ${f.blocks.map((b, i) => `<div class="card" style="margin:.5rem 0">
+      <div class="row"><b class="grow">Subject ${i + 1}</b>${f.blocks.length > 1 ? `<button data-act="aBlockDel" data-i="${i}">Remove</button>` : ''}</div>
+      <label class="field">${f.blocks.length > 1 ? 'Subject name' : 'Subject (optional)'}<br><input class="text" data-lb="${i}" data-k="subject" maxlength="60" value="${esc(b.subject)}"></label>
+      <label class="field">Paste ${esc(b.subject || 'questions')} here<br><textarea data-lb="${i}" data-k="text" rows="5" maxlength="12000" style="${taField}">${esc(b.text)}</textarea></label></div>`).join('')}
+    ${named ? '' : '<p class="note bad">Give each subject a name before you tidy.</p>'}
+    <div class="row" style="flex-wrap:wrap;gap:.5rem">
+      ${f.blocks.length < MAX_SUBJECTS ? `<button data-act="aBlockAdd">Add another subject (${f.blocks.length}/${MAX_SUBJECTS})</button>` : ''}
+      <button class="primary" data-act="aTidy"${f.drafting || !used.length || !named ? ' disabled' : ''}>${f.drafting ? 'Tidying…' : used.length > 1 ? 'Tidy all with AI' : 'Tidy with AI'}</button>
+      <button data-act="aQAdd">Add blank question</button></div>
+    ${f.manual.map((m, i) => `<div class="card" style="margin:.6rem 0">
+      <div class="row"><b class="grow">Question ${i + 1}</b><button data-act="aQDel" data-i="${i}">Remove</button></div>
+      ${m.note ? `<p class="note info small">${esc(m.note)}</p>` : ''}
+      <label class="field">Subject<br><input class="text" data-lm="${i}" data-k="subject" maxlength="60" value="${esc(m.subject)}"></label>
+      <label class="field">Question<br><textarea data-lm="${i}" data-k="question" rows="3" style="${taField}">${esc(m.question)}</textarea></label>
+      ${['a', 'b', 'c', 'd'].map((l) => `<label class="field">${l.toUpperCase()}<br><input class="text" data-lm="${i}" data-k="${l}" value="${esc(m[l])}"></label>`).join('')}
+      <p class="muted small" style="margin:.3rem 0">Correct answer</p>
+      <div class="chips">${['a', 'b', 'c', 'd'].map((l) => `<button class="chip" data-act="aQAns" data-i="${i}" data-v="${l}" aria-pressed="${m.answer === l}">${l.toUpperCase()}</button>`).join('')}</div>
+      <label class="field">Explanation (shown after the test)<br><input class="text" data-lm="${i}" data-k="explanation" value="${esc(m.explanation)}"></label></div>`).join('')}`;
 }
 function adminNewHtml() {
   const f = L.a.form || (L.a.form = newFormInit());
@@ -441,16 +474,17 @@ function adminNewHtml() {
       <button class="primary full" data-act="aCopy" data-v="${esc(f.done.code)}">Copy student link</button>
       <button class="full" style="margin-top:.5rem" data-act="aFormDone">Back to sessions</button></div>`;
   }
-  const total = Object.values(f.picks).reduce((a, b) => a + (Number(b) || 0), 0);
-  const n = Object.values(f.picks).filter((v) => Number(v) > 0).length;
+  const pickTotal = Object.values(f.picks).reduce((a, b) => a + (Number(b) || 0), 0);
+  const total = pickTotal + f.manual.length;
+  const n = formSubjects(f);
   const cb = (k, label) => `<label class="field"><input type="checkbox" data-lc="${k}"${f[k] ? ' checked' : ''}> <span>${label}</span></label>`;
   return `${bar('New live test', '#/live/admin')}<div class="page">
     <div class="field"><label class="grow">Title<br><input class="text" data-lf="title" value="${esc(f.title)}" maxlength="80" placeholder="Live test"></label></div>
     <div class="field"><label>Minutes (1 to 120)<br><input class="text" type="number" inputmode="numeric" data-lf="minutes" value="${esc(f.minutes)}" min="1" max="120" style="width:7rem"></label></div>
-    <h2>Questions from the bank <span class="muted small">(${total} chosen, up to 8 subjects, 200 total)</span></h2>
+    <h2>Questions from the bank <span class="muted small">(${pickTotal} chosen; up to ${MAX_SUBJECTS} subjects in a test, 200 questions total)</span></h2>
     <div class="subjlist">${SUBJECTS.map((s) => `<label class="card" style="margin:0;padding:.6rem">${esc(s.name)}<br>
       <input class="text" type="number" inputmode="numeric" min="0" max="100" data-lp="${esc(s.name)}" value="${esc(f.picks[s.name] || '')}" placeholder="0" style="width:5rem"></label>`).join('')}</div>
-    <p class="muted small">Typed or imported questions are not available in the web version yet. Use the Android app for those.</p>
+    ${pasteBlocksHtml(f)}
     <h2>Timer</h2>
     ${chips([{ v: 'shared', t: 'One clock for everyone' }, { v: 'personal', t: 'Each player gets full time' }], (v) => f.timer_mode === v, 'aTimer')}
     ${f.timer_mode === 'personal' ? `<div class="field"><label>Players may join up to (minutes after start)<br><input class="text" type="number" inputmode="numeric" data-lf="join_window_min" value="${esc(f.join_window_min)}" min="0" max="60" style="width:6rem"></label></div>` : ''}
@@ -466,18 +500,45 @@ function adminNewHtml() {
     ${cb('announce', 'Send a notice to phones with the Android app')}
     ${f.error ? `<p class="note bad">${esc(f.error)}</p>` : ''}
   </div>
-  <div class="footer"><p class="muted small">${n} subject${n === 1 ? '' : 's'} · ${total} questions · ${esc(f.minutes)} min</p>
+  <div class="footer"><p class="muted small">${n} subject${n === 1 ? '' : 's'}${n > MAX_SUBJECTS ? ' (max ' + MAX_SUBJECTS + ')' : ''} · ${total} questions · ${esc(f.minutes)} min</p>
     <button class="primary full" data-act="aCreate"${f.busy ? ' disabled' : ''}>${f.busy ? 'Creating…' : 'Create live test'}</button></div>`;
+}
+async function tidyBlocks() {
+  const f = L.a.form;
+  f.error = ''; f.drafting = true; route(true);
+  try {
+    let found = 0;
+    // One AI call per subject, in the order shown. A failure keeps the blocks already tidied.
+    for (const b of f.blocks) {
+      if (b.text.trim().length < 5) continue;
+      const r = await liveCall({ action: 'admin_ai_draft', text: b.text, subject: b.subject.trim() }, true);
+      (r.items || []).forEach((it) => {
+        const ans = String(it.suggested_answer || '').toLowerCase();
+        f.manual.push({ subject: it.subject || b.subject.trim(), question: it.question || '', section: it.section || '',
+          a: it.a || '', b: it.b || '', c: it.c || '', d: it.d || '', explanation: it.explanation || '',
+          answer: 'abcd'.includes(ans) && ans ? ans : '',
+          note: [it.had_options ? '' : 'The AI wrote the options. Check them.', it.confident ? '' : 'The AI is not sure of the answer. Check it.'].filter(Boolean).join(' ') || 'AI suggests the answer shown. Check it.' });
+      });
+      found += (r.items || []).length;
+      if ((r.items || []).length) b.text = '';
+    }
+    if (!found) f.error = 'The AI found no questions in that text.';
+  } catch (e) { f.error = e.message; if (!L.admin) { f.drafting = false; L.a.error = e.message; go('#/live/admin'); return; } }
+  f.drafting = false; route(true);
 }
 async function createSession() {
   const f = L.a.form;
   f.error = '';
   const picks = Object.entries(f.picks).map(([subject, c]) => ({ subject, count: Math.floor(Number(c)) })).filter((x) => x.count > 0);
-  const total = picks.reduce((a, b) => a + b.count, 0);
+  const total = picks.reduce((a, b) => a + b.count, 0) + f.manual.length;
   const mins = Math.floor(Number(f.minutes));
-  if (!picks.length) f.error = 'Pick at least one subject and a number of questions.';
-  else if (picks.length > 8) f.error = 'Use 8 subjects at most.';
+  const manual = f.manual.map((m) => ({ subject: (m.subject || '').trim(), question: m.question.trim(), section: m.section || '',
+    a: m.a.trim(), b: m.b.trim(), c: m.c.trim(), d: m.d.trim(), answer: m.answer || '', explanation: (m.explanation || '').trim() }));
+  if (!total) f.error = 'Pick bank questions or add your own questions.';
+  else if (manual.some((m) => !m.question || !m.a || !m.b || !m.c || !m.d || !'abcd'.includes(m.answer || 'x'))) f.error = 'Every typed question needs the question, four options and a correct answer.';
+  else if (formSubjects(f) > MAX_SUBJECTS) f.error = `A test can have at most ${MAX_SUBJECTS} subjects. This one has ${formSubjects(f)}.`;
   else if (picks.some((p) => p.count > 100)) f.error = 'Use 100 questions or fewer per subject.';
+  else if (f.manual.length > 100) f.error = 'Use 100 typed questions or fewer.';
   else if (total > 200) f.error = 'A test holds 200 questions at most.';
   else if (!(mins >= 1 && mins <= 120)) f.error = 'Minutes must be 1 to 120.';
   else if (f.start_at && isNaN(new Date(f.start_at).getTime())) f.error = 'That start time is not valid.';
@@ -485,7 +546,7 @@ async function createSession() {
   f.busy = true; route(true);
   try {
     const body = {
-      action: 'admin_create', title: f.title.trim() || 'Live test', minutes: mins, picks, manual: [],
+      action: 'admin_create', title: f.title.trim() || 'Live test', minutes: mins, picks, manual,
       announce: f.announce, timer_mode: f.timer_mode, join_window_min: Math.floor(Number(f.join_window_min)) || 0,
       score_visibility: f.score_visibility, code: f.code.trim(), auto_end: f.auto_end,
       auto_approve_late: f.auto_approve_late, strict_leave: f.strict_leave, strict_return: f.strict_leave && f.strict_return,
@@ -608,6 +669,12 @@ const LIVE_ACTIONS = {
   },
   aTimer: (el) => { L.a.form.timer_mode = el.dataset.v; route(true); },
   aScore: (el) => { L.a.form.score_visibility = el.dataset.v; route(true); },
+  aBlockAdd: () => { const f = L.a.form; if (f.blocks.length < MAX_SUBJECTS) f.blocks.push({ subject: '', text: '' }); route(true); },
+  aBlockDel: (el) => { const f = L.a.form; f.blocks.splice(Number(el.dataset.i), 1); if (!f.blocks.length) f.blocks.push({ subject: '', text: '' }); route(true); },
+  aTidy: tidyBlocks,
+  aQAdd: () => { const f = L.a.form; f.manual.push({ subject: (f.blocks[0] && f.blocks[0].subject.trim()) || '', question: '', section: '', a: '', b: '', c: '', d: '', explanation: '', answer: '', note: '' }); route(true); },
+  aQDel: (el) => { L.a.form.manual.splice(Number(el.dataset.i), 1); route(true); },
+  aQAns: (el) => { L.a.form.manual[Number(el.dataset.i)].answer = el.dataset.v; route(true); },
   aCreate: createSession,
   aFormDone: () => { L.a.form = null; go('#/live/admin'); },
 };
@@ -622,7 +689,13 @@ document.addEventListener('input', (ev) => {
     if (btn) btn.disabled = !(L.join.code.length >= 4 && L.join.name.trim().length >= 2 && !L.join.busy);
   } else if (d.la) L.a.login[d.la] = el.value;
   else if (d.lf && L.a.form) L.a.form[d.lf] = d.lf === 'code' ? cleanCode(el.value) : el.value;
-  else if (d.lp && L.a.form) L.a.form.picks[d.lp] = el.value;
+  else if (d.lp && L.a.form) { L.a.form.picks[d.lp] = el.value; }
+  else if (d.lb !== undefined && L.a.form) {
+    const f = L.a.form; f.blocks[Number(d.lb)][d.k] = el.value;
+    const btn = document.querySelector('[data-act=aTidy]');
+    if (btn) { const used = f.blocks.filter((b) => b.text.trim().length >= 5); btn.disabled = f.drafting || !used.length || (used.length > 1 && !used.every((b) => b.subject.trim())); }
+  }
+  else if (d.lm !== undefined && L.a.form) { L.a.form.manual[Number(d.lm)][d.k] = el.value; }
 });
 document.addEventListener('change', (ev) => {
   const el = ev.target;

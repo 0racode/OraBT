@@ -1,5 +1,5 @@
 // Offline support: the app files and the question bank are kept on the phone after the first visit.
-const VERSION = 'pastq-web-1';
+const VERSION = 'pastq-web-2';
 const SHELL = ['./', 'index.html', 'app.js', 'live.js', 'style.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
