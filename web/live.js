@@ -278,13 +278,15 @@ function playHtml(p, screen) {
         inner = `<p>Starts in</p><div class="bigtime" id="lcount">${countdownLabel((p.startsAt - Date.now()) / 1000)}</div>
           ${s.scheduled_start_at ? `<p>Scheduled for ${esc(new Date(s.scheduled_start_at).toLocaleString())}</p>` : ''}
           <p>${s.players} joined · ${s.minutes} minutes · you are ${esc(s.name)}</p>${s.strict_leave ? strictRules(s.strict_return) : ''}
-          <p class="muted small">${s.timer_mode === 'personal' ? `You get the full ${s.minutes} minutes from the moment you begin.` : 'The test opens by itself at the start time and the clock runs for everyone. Keep this page open.'}</p>`;
+          <p class="muted small">${s.open_window_min ? `When it opens, start any time before it closes. You get ${s.minutes} minutes from the moment you start, but the test stops for everyone when the window closes.` : s.timer_mode === 'personal' ? `You get the full ${s.minutes} minutes from the moment you begin.` : 'The test opens by itself at the start time and the clock runs for everyone. Keep this page open.'}</p>`;
       } else if (s.status === 'waiting') {
         inner = `${spinner}<h2>Waiting for the admin to start</h2><p>${s.players} joined · ${s.minutes} minutes · you are ${esc(s.name)}</p>
           ${s.strict_leave ? strictRules(s.strict_return) : ''}
           <p class="muted small">${s.timer_mode === 'personal' ? `You get the full ${s.minutes} minutes from the moment you start, even if you join late.` : 'The clock starts for everyone when the admin starts the test.'}</p>`;
       } else if (s.status === 'running' && p.submitted) {
-        inner = `<h2>Answers submitted</h2><p>Your corrections and position appear when the session ends (<span id="ltimer">${fmtTime(remainingSecs(p))}</span> left, or when the admin ends it).</p>`;
+        inner = s.open_window_min
+          ? `<h2>Answers submitted</h2><p>Your corrections and position appear when the window closes (in ${esc(countdownLabel(s.window_seconds_left || 0))}, or when the admin ends it).</p>`
+          : `<h2>Answers submitted</h2><p>Your corrections and position appear when the session ends (<span id="ltimer">${fmtTime(remainingSecs(p))}</span> left, or when the admin ends it).</p>`;
       } else if (s.status === 'ended') {
         inner = `${spinner}<p>Session ended. Getting your results…</p>`;
       } else inner = spinner;
@@ -410,14 +412,16 @@ function adminLoginHtml() {
 }
 const STATUS = { waiting: 'Waiting', running: 'Running', ended: 'Ended' };
 function sessionCard(s) {
-  const when = s.status === 'waiting' && s.scheduled_start_at ? `<br><span class="muted small">Starts ${esc(new Date(s.scheduled_start_at).toLocaleString())}</span>` : '';
+  const isOpen = !!s.open_window_min;
+  const when = s.status === 'waiting' && s.scheduled_start_at ? `<br><span class="muted small">${isOpen ? 'Opens' : 'Starts'} ${esc(new Date(s.scheduled_start_at).toLocaleString())}</span>` : '';
+  const openInfo = isOpen && s.status === 'running' ? `<br><span class="muted small">Open window: closes in ${esc(countdownLabel(s.seconds_left))}. Players start by themselves.</span>` : '';
   return `<div class="card"><div class="row"><b class="grow">${esc(s.title)}</b><span class="chip" style="min-height:32px;padding:.2rem .7rem">${esc(STATUS[s.status] || s.status)}</span></div>
     <p><b style="font-size:1.4rem;letter-spacing:.1em">${esc(s.code)}</b> <button class="ghost" data-act="aCopy" data-v="${esc(s.code)}">Copy link</button></p>
-    <p class="muted small">${s.players} joined · ${s.submitted} submitted · ${s.questions} questions · ${s.minutes} min${s.strict_leave ? ' · strict' : ''}${when}</p>
+    <p class="muted small">${s.players} joined · ${s.submitted} submitted · ${s.questions} questions · ${s.minutes} min${isOpen ? ' each' : ''}${s.strict_leave ? ' · strict' : ''}${when}${openInfo}</p>
     ${s.requests > 0 ? `<p class="note warn">${s.requests} waiting to be let in</p>` : ''}
     <div class="row wrap">
-      ${s.status === 'waiting' ? `<button class="primary" data-act="aStart" data-v="${esc(s.id)}">Start now</button><button data-act="aSchedule" data-v="${esc(s.id)}">Schedule</button>` : ''}
-      ${s.status === 'running' ? `<button class="danger" data-act="aEndAsk" data-v="${esc(s.id)}">End test</button>` : ''}
+      ${s.status === 'waiting' ? `<button class="primary" data-act="aStart" data-v="${esc(s.id)}">${isOpen ? 'Open now' : 'Start now'}</button><button data-act="aSchedule" data-v="${esc(s.id)}">Schedule</button>` : ''}
+      ${s.status === 'running' ? `<button class="danger" data-act="aEndAsk" data-v="${esc(s.id)}">${isOpen ? 'Close window now' : 'End test'}</button>` : ''}
       ${s.requests > 0 ? `<button data-act="aRequests" data-v="${esc(s.id)}">Requests (${s.requests})</button>` : ''}
       <button data-act="aResults" data-v="${esc(s.id)}">Results</button>
       <button class="ghost" data-act="aDeleteAsk" data-v="${esc(s.id)}">Delete</button></div></div>`;
@@ -430,9 +434,16 @@ function adminListHtml() {
 }
 function newFormInit() {
   return { title: '', minutes: 40, picks: {}, blocks: [{ subject: '', text: '' }], manual: [], drafting: false, timer_mode: 'shared', join_window_min: 10, score_visibility: 'after_end',
+    open_type: false, open_days: 1, open_hours: 0, open_mins: 0,
     code: '', auto_end: false, auto_approve_late: false, strict_leave: false, strict_return: false, announce: true, start_at: '', busy: false, error: '', done: null };
 }
 const MAX_SUBJECTS = 4;
+const MAX_OPEN_MIN = 2880; // an open window can stay open for 2 days at most
+const openMinutes = (f) => (Math.floor(Number(f.open_days)) || 0) * 1440 + (Math.floor(Number(f.open_hours)) || 0) * 60 + (Math.floor(Number(f.open_mins)) || 0);
+function windowText(m) {
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  return [d ? `${d} day${d > 1 ? 's' : ''}` : '', h ? `${h} hour${h > 1 ? 's' : ''}` : '', mm ? `${mm} min` : ''].filter(Boolean).join(' ') || '0 min';
+}
 const subjKey = (x) => String(x || 'Custom').trim().toLowerCase().replace(/\s+/g, ' ') || 'custom';
 function formSubjects(f) {
   const keys = new Set();
@@ -480,21 +491,29 @@ function adminNewHtml() {
   const cb = (k, label) => `<label class="field"><input type="checkbox" data-lc="${k}"${f[k] ? ' checked' : ''}> <span>${label}</span></label>`;
   return `${bar('New live test', '#/live/admin')}<div class="page">
     <div class="field"><label class="grow">Title<br><input class="text" data-lf="title" value="${esc(f.title)}" maxlength="80" placeholder="Live test"></label></div>
-    <div class="field"><label>Minutes (1 to 120)<br><input class="text" type="number" inputmode="numeric" data-lf="minutes" value="${esc(f.minutes)}" min="1" max="120" style="width:7rem"></label></div>
+    <div class="field"><label>${f.open_type ? 'Time for each player' : 'Minutes'} (1 to 120)<br><input class="text" type="number" inputmode="numeric" data-lf="minutes" value="${esc(f.minutes)}" min="1" max="120" style="width:7rem"></label></div>
+    <h2>How does the test start?</h2>
+    ${chips([{ v: 'admin', t: 'I start it' }, { v: 'open', t: 'Open window' }], (v) => (v === 'open') === !!f.open_type, 'aOpenType')}
+    ${f.open_type ? `<p class="muted small">Players start the test themselves, any time while the window is open, so you do not need to press Start. Each player gets the time above from the moment they start. Nobody can start after the window closes, and anyone still testing when it closes is stopped at once.</p>
+      <div class="row" style="gap:.5rem;flex-wrap:wrap">
+        <label class="field">Days<br><input class="text" type="number" inputmode="numeric" data-lf="open_days" value="${esc(f.open_days)}" min="0" max="2" style="width:5rem"></label>
+        <label class="field">Hours<br><input class="text" type="number" inputmode="numeric" data-lf="open_hours" value="${esc(f.open_hours)}" min="0" max="48" style="width:5rem"></label>
+        <label class="field">Minutes<br><input class="text" type="number" inputmode="numeric" data-lf="open_mins" value="${esc(f.open_mins)}" min="0" max="59" style="width:5rem"></label></div>
+      <p class="muted small">Open for ${esc(windowText(openMinutes(f)))} (2 days at most).</p>` : ''}
     <h2>Questions from the bank <span class="muted small">(${pickTotal} chosen; up to ${MAX_SUBJECTS} subjects in a test, 200 questions total)</span></h2>
     <div class="subjlist">${SUBJECTS.map((s) => `<label class="card" style="margin:0;padding:.6rem">${esc(s.name)}<br>
       <input class="text" type="number" inputmode="numeric" min="0" max="100" data-lp="${esc(s.name)}" value="${esc(f.picks[s.name] || '')}" placeholder="0" style="width:5rem"></label>`).join('')}</div>
     ${pasteBlocksHtml(f)}
-    <h2>Timer</h2>
+    ${f.open_type ? '' : `<h2>Timer</h2>
     ${chips([{ v: 'shared', t: 'One clock for everyone' }, { v: 'personal', t: 'Each player gets full time' }], (v) => f.timer_mode === v, 'aTimer')}
-    ${f.timer_mode === 'personal' ? `<div class="field"><label>Players may join up to (minutes after start)<br><input class="text" type="number" inputmode="numeric" data-lf="join_window_min" value="${esc(f.join_window_min)}" min="0" max="60" style="width:6rem"></label></div>` : ''}
+    ${f.timer_mode === 'personal' ? `<div class="field"><label>Players may join up to (minutes after start)<br><input class="text" type="number" inputmode="numeric" data-lf="join_window_min" value="${esc(f.join_window_min)}" min="0" max="60" style="width:6rem"></label></div>` : ''}`}
     <h2>Scores</h2>
     ${chips([{ v: 'after_end', t: 'When the test ends' }, { v: 'immediate', t: 'Right after each player finishes' }], (v) => f.score_visibility === v, 'aScore')}
     <h2>Options</h2>
     <div class="field"><label class="grow">Custom join code (optional, 4 to 12 letters or digits)<br><input class="text" data-lf="code" value="${esc(f.code)}" maxlength="12" autocapitalize="characters"></label></div>
-    <div class="field"><label class="grow">Scheduled start (optional)<br><input class="text" type="datetime-local" data-lf="start_at" value="${esc(f.start_at)}"></label></div>
-    ${cb('auto_end', 'End automatically when everyone has submitted')}
-    ${cb('auto_approve_late', 'Let late joiners in without asking me')}
+    <div class="field"><label class="grow">${f.open_type ? 'Opens at (optional; empty means it opens as soon as you create it)' : 'Scheduled start (optional)'}<br><input class="text" type="datetime-local" data-lf="start_at" value="${esc(f.start_at)}"></label></div>
+    ${f.open_type ? '' : cb('auto_end', 'End automatically when everyone has submitted')}
+    ${f.open_type ? '' : cb('auto_approve_late', 'Let late joiners in without asking me')}
     ${cb('strict_leave', 'Strict: a player who leaves the page is closed out')}
     ${f.strict_leave ? cb('strict_return', 'Closed-out players may ask to come back') : ''}
     ${cb('announce', 'Send a notice to phones with the Android app')}
@@ -541,16 +560,19 @@ async function createSession() {
   else if (f.manual.length > 100) f.error = 'Use 100 typed questions or fewer.';
   else if (total > 200) f.error = 'A test holds 200 questions at most.';
   else if (!(mins >= 1 && mins <= 120)) f.error = 'Minutes must be 1 to 120.';
+  else if (f.open_type && !(openMinutes(f) >= 1 && openMinutes(f) <= MAX_OPEN_MIN)) f.error = openMinutes(f) > MAX_OPEN_MIN ? 'The open window can be 2 days at most.' : 'Set how long the window stays open.';
+  else if (f.open_type && mins > openMinutes(f)) f.error = 'The window must be at least as long as the time each player gets.';
   else if (f.start_at && isNaN(new Date(f.start_at).getTime())) f.error = 'That start time is not valid.';
   if (f.error) return route(true);
   f.busy = true; route(true);
   try {
     const body = {
       action: 'admin_create', title: f.title.trim() || 'Live test', minutes: mins, picks, manual,
-      announce: f.announce, timer_mode: f.timer_mode, join_window_min: Math.floor(Number(f.join_window_min)) || 0,
-      score_visibility: f.score_visibility, code: f.code.trim(), auto_end: f.auto_end,
+      announce: f.announce, timer_mode: f.open_type ? 'personal' : f.timer_mode, join_window_min: Math.floor(Number(f.join_window_min)) || 0,
+      score_visibility: f.score_visibility, code: f.code.trim(), auto_end: f.auto_end && !f.open_type,
       auto_approve_late: f.auto_approve_late, strict_leave: f.strict_leave, strict_return: f.strict_leave && f.strict_return,
     };
+    if (f.open_type) { body.session_type = 'open'; body.open_window_min = openMinutes(f); }
     if (f.start_at) body.start_at = new Date(f.start_at).toISOString();
     const r = await liveCall(body, true);
     f.done = r; f.busy = false; loadSessions(true);
@@ -667,6 +689,7 @@ const LIVE_ACTIONS = {
     try { await liveCall({ action: 'admin_decide', id, player_id: p, allow: allow === '1' }, true); } catch (e) { L.a.error = e.message; }
     closeModal(); loadSessions(false);
   },
+  aOpenType: (el) => { L.a.form.open_type = el.dataset.v === 'open'; route(true); },
   aTimer: (el) => { L.a.form.timer_mode = el.dataset.v; route(true); },
   aScore: (el) => { L.a.form.score_visibility = el.dataset.v; route(true); },
   aBlockAdd: () => { const f = L.a.form; if (f.blocks.length < MAX_SUBJECTS) f.blocks.push({ subject: '', text: '' }); route(true); },

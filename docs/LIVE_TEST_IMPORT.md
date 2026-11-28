@@ -56,6 +56,14 @@ duration. Questions stay grouped by subject, in the order the subjects were adde
 In the admin screen (app and web) use **Add another subject** to paste a separate block per subject; **Tidy all with AI**
 tidies every block and tags each question with its subject. Names that differ only by case or spacing count as one subject.
 
+## Open-window tests
+
+When creating a test, choose **Open window** instead of "I start it". The test then needs no admin Start: it is open from the
+moment it is created (or from the "Opens at" time you set) for the window you choose, up to **2 days**. Players start whenever
+they like while it is open, and each gets the test time (1 to 120 minutes) from the moment they start. Nobody can start after the
+window closes, there are no late-join requests, and anyone still testing when the window closes is stopped at once with no extra
+time. Scores and corrections appear when the window closes (or earlier if you close it yourself).
+
 ## What gets skipped
 
 A row is skipped (and listed in the preview) when the question is empty, an option is empty, the answer is missing, or the

@@ -226,12 +226,12 @@ fun AdminHomeScreen(
                                 val startMs = parseIsoUtc(s.scheduled_start_at)
                                 val state = when (s.status) {
                                     "waiting" ->
-                                        if (startMs != null) "Starts ${formatWhen(startMs)} (${countdownLabel(((startMs - System.currentTimeMillis()) / 1000).toInt())})"
+                                        if (startMs != null) (if (s.open_window_min != null) "Opens " else "Starts ") + "${formatWhen(startMs)} (${countdownLabel(((startMs - System.currentTimeMillis()) / 1000).toInt())})"
                                         else "Waiting to start"
-                                    "running" -> "Running · ${formatTime(s.seconds_left)} left"
+                                    "running" -> if (s.open_window_min != null) "Open · closes in ${countdownLabel(s.seconds_left)}" else "Running · ${formatTime(s.seconds_left)} left"
                                     else -> "Ended"
                                 }
-                                Text("$state · ${s.questions} questions · ${s.minutes} min", style = MaterialTheme.typography.bodyMedium)
+                                Text("$state · ${s.questions} questions · ${s.minutes} min" + if (s.open_window_min != null) " each" else "", style = MaterialTheme.typography.bodyMedium)
                                 Text("${s.players} joined · ${s.submitted} submitted" + if (s.auto_end) " · ends when all submit" else "", style = MaterialTheme.typography.bodySmall)
                                 if (s.requests > 0) {
                                     Text("${s.requests} request(s) waiting for you", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
@@ -241,9 +241,9 @@ fun AdminHomeScreen(
                                     OutlinedButton(onClick = { schedulingFor = s }) { Text(if (s.scheduled_start_at != null) "Change start time" else "Set a start time") }
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (s.status == "waiting") Button(onClick = { act { LiveManager.adminStart(s.id) } }) { Text(if (s.scheduled_start_at != null) "Start now" else "Start") }
+                                    if (s.status == "waiting") Button(onClick = { act { LiveManager.adminStart(s.id) } }) { Text(if (s.open_window_min != null) "Open now" else if (s.scheduled_start_at != null) "Start now" else "Start") }
                                     if (s.status == "running") Button(onClick = { act { LiveManager.adminEnd(s.id) } }) { Text("End now") }
-                                    if (s.status == "running" || s.requests > 0) {
+                                    if ((s.status == "running" && s.open_window_min == null) || s.requests > 0) {
                                         OutlinedButton(onClick = { requestsFor = s }) { Text(if (s.requests > 0) "Requests (${s.requests})" else "Requests") }
                                     }
                                     OutlinedButton(onClick = { onResults(s.id) }) { Text("Results") }
@@ -364,6 +364,11 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     var autoApproveLate by remember { mutableStateOf(false) }
     var strictLeave by remember { mutableStateOf(false) }
     var strictReturn by remember { mutableStateOf(false) }
+    // Open-window test: no admin Start; players start any time inside the window (up to 2 days).
+    var openType by remember { mutableStateOf(false) }
+    var openDays by remember { mutableStateOf("1") }
+    var openHours by remember { mutableStateOf("0") }
+    var openMins by remember { mutableStateOf("0") }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -478,6 +483,8 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
 
     val minutes = (hours.toIntOrNull() ?: 0) * 60 + (mins.toIntOrNull() ?: 0)
     val timeOk = minutes in 1..120
+    val openWindowMin = (openDays.toIntOrNull() ?: 0) * 1440 + (openHours.toIntOrNull() ?: 0) * 60 + (openMins.toIntOrNull() ?: 0)
+    val openOk = !openType || (openWindowMin in 1..2880 && minutes <= openWindowMin)
     val pickTotal = picks.values.sumOf { it.toIntOrNull() ?: 0 }
     val total = pickTotal + manual.size
     // Up to 4 subjects share one test and one timer. Names that differ only by case or spacing count as one.
@@ -488,7 +495,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
     val windowOk = timerMode != "personal" || (joinWindow.toIntOrNull() ?: -1) in 0..60
     val codeOk = customCode.isEmpty() || customCode.length in 4..12
     val startOk = !scheduled || startMillis > System.currentTimeMillis()
-    val canCreate = !creating && timeOk && windowOk && codeOk && startOk && subjectsOk && total in 1..200 && manual.all { it.valid }
+    val canCreate = !creating && timeOk && windowOk && codeOk && startOk && subjectsOk && openOk && total in 1..200 && manual.all { it.valid }
 
     Scaffold(
         topBar = { BackBar("New live test", onBack) },
@@ -510,11 +517,12 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                                     manual = manual.map { DraftItem(it.question, it.section, it.a, it.b, it.c, it.d, "", it.explanation, false, true, it.subject) },
                                     answers = manual.map { it.answer ?: 'a' },
                                     announce = announce,
-                                    timerMode = timerMode,
+                                    timerMode = if (openType) "personal" else timerMode,
+                                    openWindowMin = if (openType) openWindowMin else 0,
                                     joinWindowMin = joinWindow.toIntOrNull() ?: 10,
                                     scoreVisibility = scoreVisibility,
                                     code = customCode,
-                                    autoEnd = autoEnd,
+                                    autoEnd = autoEnd && !openType,
                                     startAt = if (scheduled) isoUtc(startMillis) else null,
                                     autoApproveLate = scheduled && autoApproveLate,
                                     strictLeave = strictLeave,
@@ -546,11 +554,43 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
             )
             DurationInput(hours, mins, { hours = it }, { mins = it }, timeOk)
 
+            Text("How does the test start?", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !openType, onClick = { openType = false }, label = { Text("I start it") })
+                FilterChip(selected = openType, onClick = { openType = true }, label = { Text("Open window") })
+            }
+            if (openType) {
+                Text(
+                    "Players start the test themselves, any time while the window is open, so you do not need to press Start. Each player gets the time above from the moment they start. Nobody can start after the window closes, and anyone still testing when it closes is stopped at once.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("Window stays open for", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(openDays, { openDays = it.filter(Char::isDigit).take(1) }, label = { Text("Days") }, singleLine = true,
+                        isError = !openOk, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                    OutlinedTextField(openHours, { openHours = it.filter(Char::isDigit).take(2) }, label = { Text("Hours") }, singleLine = true,
+                        isError = !openOk, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                    OutlinedTextField(openMins, { openMins = it.filter(Char::isDigit).take(2) }, label = { Text("Minutes") }, singleLine = true,
+                        isError = !openOk, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                }
+                if (!openOk) {
+                    Text(
+                        if (openWindowMin > 2880) "The window can be 2 days at most."
+                        else if (openWindowMin < 1) "Set how long the window stays open."
+                        else "The window must be at least as long as the time each player gets.",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text("Open for ${formatOpenWindow(openWindowMin)}.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Start at a set time", style = MaterialTheme.typography.titleMedium)
                     Text(
                         if (scheduled) "The test starts by itself at the time below, even if you are offline."
+                        else if (openType) "Off: the window opens as soon as you create the test."
                         else "Off: the test waits until you press Start.",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -574,13 +614,15 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                     Text("Pick a time in the future.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 // The shared clock runs for the duration. With personal timers the test stays open for the late-join window as well.
-                val lastMinutes = minutes + if (timerMode == "personal") (joinWindow.toIntOrNull() ?: 0) else 0
+                val lastMinutes = if (openType) openWindowMin else minutes + if (timerMode == "personal") (joinWindow.toIntOrNull() ?: 0) else 0
                 val endMillis = startMillis + lastMinutes * 60_000L
                 Text(
-                    "Starts at ${formatWhen(startMillis)} and ends at ${formatWhen(endMillis)}" +
-                        if (autoEnd) ", or sooner once everyone has submitted." else ".",
+                    (if (openType) "Opens at ${formatWhen(startMillis)} and closes at ${formatWhen(endMillis)}."
+                    else "Starts at ${formatWhen(startMillis)} and ends at ${formatWhen(endMillis)}" +
+                        if (autoEnd) ", or sooner once everyone has submitted." else "."),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (!openType) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Let late joiners in automatically", style = MaterialTheme.typography.titleMedium)
@@ -592,8 +634,10 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                     }
                     androidx.compose.material3.Switch(checked = autoApproveLate, onCheckedChange = { autoApproveLate = it })
                 }
+                }
             }
 
+            if (!openType) {
             Text("When does each player's time start?", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = timerMode == "shared", onClick = { timerMode = "shared" }, label = { Text("Same clock for everyone") })
@@ -618,6 +662,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 )
             }
 
+            }
             Text("When do players see their score and position?", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = scoreVisibility == "after_end", onClick = { scoreVisibility = "after_end" }, label = { Text("When the test ends") })
@@ -631,6 +676,7 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (!openType) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("End when everyone has submitted", style = MaterialTheme.typography.titleMedium)
@@ -638,8 +684,10 @@ fun AdminCreateScreen(repo: Repository, onBack: () -> Unit, onCreated: () -> Uni
                 }
                 androidx.compose.material3.Switch(checked = autoEnd, onCheckedChange = { autoEnd = it })
             }
+            }
             Text(
-                (if (scheduled && autoApproveLate) "Players who join after the start are let in automatically. "
+                (if (openType) "Nobody can start after the window closes. "
+                else if (scheduled && autoApproveLate) "Players who join after the start are let in automatically. "
                 else "Players who join after you start must send a request, and you decide in the Requests list. ") +
                     if (strictLeave) "Anyone who leaves the app during the test is closed out for good."
                     else "Anyone who leaves the app during the test is locked out until you let them back in.",
@@ -1264,4 +1312,16 @@ fun AdminDisputedScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+/** "1 day 2 hours 30 min" style text for an open window given in minutes. */
+private fun formatOpenWindow(totalMin: Int): String {
+    val d = totalMin / 1440
+    val h = (totalMin % 1440) / 60
+    val m = totalMin % 60
+    return listOfNotNull(
+        if (d > 0) "$d day${if (d > 1) "s" else ""}" else null,
+        if (h > 0) "$h hour${if (h > 1) "s" else ""}" else null,
+        if (m > 0) "$m min" else null,
+    ).joinToString(" ").ifBlank { "0 min" }
 }

@@ -378,7 +378,8 @@ fun LivePlayScreen(onBack: () -> Unit) {
                         Text("${s.players} joined · ${s.minutes} minutes · you are ${s.name}")
                         if (s.strict_leave) StrictRulesCard(s.strict_return)
                         Text(
-                            if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you begin."
+                            if (s.open_window_min != null) "When it opens, start any time before it closes. You get ${s.minutes} minutes from the moment you start, but the test stops for everyone when the window closes."
+                            else if (s.timer_mode == "personal") "You get the full ${s.minutes} minutes from the moment you begin."
                             else "The test opens by itself at the start time and the clock runs for everyone. Keep this screen open.",
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -396,7 +397,11 @@ fun LivePlayScreen(onBack: () -> Unit) {
                     }
                     s.status == "running" && submitted -> {
                         Text("Answers submitted", style = MaterialTheme.typography.titleLarge)
-                        Text("Your corrections and position appear when the session ends (${formatTime(remaining)} left, or when the admin ends it).", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (s.open_window_min != null) "Your corrections and position appear when the window closes (in ${countdownLabel(s.window_seconds_left)}, or when the admin ends it)."
+                            else "Your corrections and position appear when the session ends (${formatTime(remaining)} left, or when the admin ends it).",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                     s.status == "ended" -> {
                         CircularProgressIndicator()

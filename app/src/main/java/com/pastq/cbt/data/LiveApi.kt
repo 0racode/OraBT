@@ -89,6 +89,10 @@ data class LiveState(
     val left_app: Boolean = false,
     /** Strict test where a closed-out player may ask the admin to let them back in. */
     val strict_return: Boolean = false,
+    /** Open-window test: minutes the test stays open (players start themselves); null for a normal test. */
+    val open_window_min: Int? = null,
+    /** Open-window test: seconds until the window closes, counted by the server's clock. */
+    val window_seconds_left: Int = 0,
 )
 
 @Serializable
@@ -150,6 +154,8 @@ data class AdminSession(
     val scheduled_start_at: String? = null,
     val starts_in_seconds: Int = 0,
     val ends_at: String? = null,
+    /** Open-window test: minutes the test stays open (no admin Start); null for a normal test. */
+    val open_window_min: Int? = null,
 )
 
 @Serializable
@@ -390,6 +396,8 @@ object LiveManager {
         strictLeave: Boolean = false,
         /** With strictLeave: a closed-out player may ask to come back, and the admin decides (only while online). */
         strictReturn: Boolean = false,
+        /** Open-window test (1 to 2880 minutes = 2 days): no admin Start; each player starts themselves and gets [minutes]. 0 = normal test. */
+        openWindowMin: Int = 0,
     ): CreatedSession = request("admin_create", true) {
         put("title", title)
         put("code", code)
@@ -402,6 +410,7 @@ object LiveManager {
         put("minutes", minutes)
         put("timer_mode", timerMode)
         put("join_window_min", joinWindowMin)
+        if (openWindowMin > 0) { put("session_type", "open"); put("open_window_min", openWindowMin) }
         put("score_visibility", scoreVisibility)
         put("picks", JsonArray(picks.filter { it.value > 0 }.map { (s, n) ->
             buildJsonObject { put("subject", s); put("count", n) }

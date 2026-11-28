@@ -28,6 +28,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 //                     (admin online) is their entry reopened with the saved answers and their clock still running; otherwise the
 //                     closed-out grade stands.
 //
+//   open_window_min   open-window test (1 to 2880 minutes = 2 days): no admin Start. The test is open from creation (or from the
+//                     scheduled time) and players start whenever they like inside the window; each gets duration_min from the moment
+//                     they begin. When the window closes the test ends for everybody still going, with no extra time. Nobody can
+//                     start late, so there are no late-join requests. Open tests use the personal timer and never auto-end.
+//
 // Scheduled starts and time-ups are applied in two ways, so they never depend on one thing alone:
 //   1. lazily, whenever anybody reads the session (refresh), and
 //   2. by the "tick" action that a pg_cron job calls every minute (job token "live-tick" in pastq_jobs).
@@ -103,20 +108,28 @@ async function isAdmin(req: Request): Promise<boolean> {
 // updated row back (null when somebody else already started it), so the start notice is sent once.
 async function startSession(s: any, startMs: number): Promise<any | null> {
   // In personal-timer mode the session stays open for the late-join window on top of the duration.
+  // Open-window tests end exactly when the window closes (the per-player time is cut short at that moment).
   const windowMs = s.timer_mode === "personal" ? (s.join_window_min ?? 10) * 60000 : 0;
+  const endMs = s.open_window_min ? startMs + s.open_window_min * 60000 : startMs + s.duration_min * 60000 + windowMs;
   const r = await rest(`pastq_live_sessions?id=eq.${s.id}&status=eq.waiting`, {
     method: "PATCH", headers: { Prefer: "return=representation" },
     body: JSON.stringify({
       status: "running",
       started_at: new Date(startMs).toISOString(),
-      ends_at: new Date(startMs + s.duration_min * 60000 + windowMs).toISOString(),
+      ends_at: new Date(endMs).toISOString(),
     }),
   });
   const rows = r.ok ? await r.json() : [];
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
+const windowText = (m: number) => {
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  return [d ? `${d} day${d > 1 ? "s" : ""}` : "", h ? `${h} hour${h > 1 ? "s" : ""}` : "", mm ? `${mm} min` : ""].filter(Boolean).join(" ") || "0 min";
+};
 const liveNowNotice = (s: any) =>
-  s.timer_mode === "personal"
+  s.open_window_min
+    ? `Tap to join with code ${s.code}. You have ${s.duration_min} minutes once you start. Open for ${windowText(s.open_window_min)}.`
+    : s.timer_mode === "personal"
     ? `Tap to join with code ${s.code}. You have ${s.duration_min} minutes once you start.`
     : `Tap to join with code ${s.code}. The clock is already running.`;
 
@@ -189,7 +202,7 @@ async function submitStored(s: any, player: any) {
 
 // Ends a running session early when the admin chose "end when everyone has submitted" and everyone has.
 async function maybeAutoEnd(s: any) {
-  if (!s || !s.auto_end || s.status !== "running") return;
+  if (!s || !s.auto_end || s.open_window_min || s.status !== "running") return;
   const ps = await get(`pastq_live_players?session_id=eq.${s.id}&join_status=eq.approved&select=submitted_at,left_app,left_at`);
   // When closed-out players may ask to come back, the test waits a few minutes before ending on their account.
   const holdAfter = Date.now() - RETURN_HOLD_MS;
@@ -366,6 +379,7 @@ const DRAFT_SCHEMA = {
 };
 
 const MAX_SUBJECTS = 4;
+const MAX_OPEN_WINDOW_MIN = 2880; // open-window tests stay open for at most 2 days
 
 // ---------- cleaning of admin-supplied items ----------
 function cleanItem(x: any, fallbackSubject: string) {
@@ -437,14 +451,22 @@ Deno.serve(async (req) => {
         const minutes = Math.floor(Number(body.minutes));
         if (!Number.isFinite(minutes) || minutes < 1 || minutes > 120) return fail("Duration must be 1 to 120 minutes.");
         const announce = body.announce !== false;
-        const autoEnd = body.auto_end === true;
+        // (open tests never auto-end and have no late-join requests, so those two options are ignored there)
+        const autoEnd = body.auto_end === true && body.session_type !== "open" && !(Number(body.open_window_min) > 0);
         const autoApproveLate = body.auto_approve_late === true;
         const strictLeave = body.strict_leave === true;
         const strictReturn = strictLeave && body.strict_return === true;
-        const timerMode = body.timer_mode === "personal" ? "personal" : "shared";
+        // Open-window test: no admin Start; players start on their own anytime inside the window.
+        const openWindow = Math.floor(Number(body.open_window_min));
+        const isOpen = body.session_type === "open" || (Number.isFinite(openWindow) && openWindow > 0);
+        if (isOpen) {
+          if (!Number.isFinite(openWindow) || openWindow < 1 || openWindow > MAX_OPEN_WINDOW_MIN) return fail("The open window must be 1 minute to 2 days.");
+          if (minutes > openWindow) return fail("The time for each player cannot be longer than the open window.");
+        }
+        const timerMode = isOpen || body.timer_mode === "personal" ? "personal" : "shared";
         const scoreVisibility = body.score_visibility === "immediate" ? "immediate" : "after_end";
         const jw = Math.floor(Number(body.join_window_min));
-        const joinWindow = Number.isFinite(jw) ? Math.min(60, Math.max(0, jw)) : 10;
+        const joinWindow = isOpen ? 0 : Number.isFinite(jw) ? Math.min(60, Math.max(0, jw)) : 10;
         let scheduledStart: string | null = null;
         if (body.start_at) {
           const p = parseStart(body.start_at);
@@ -503,6 +525,7 @@ Deno.serve(async (req) => {
         if (groups.size > MAX_SUBJECTS) return fail(`A test can have at most ${MAX_SUBJECTS} subjects. This one has ${groups.size}.`);
         items.length = 0;
         for (const g of groups.values()) { shuffle(g); items.push(...g); }
+        const openNow = new Date();
         const code = wanted || await newCode();
         const subjects = [...new Set(items.map((i) => i.subject))].join(", ").slice(0, 200);
         const cr = await rest("pastq_live_sessions", {
@@ -511,6 +534,9 @@ Deno.serve(async (req) => {
             code, title, duration_min: minutes, subjects, announce, auto_end: autoEnd,
             timer_mode: timerMode, join_window_min: joinWindow, score_visibility: scoreVisibility,
             scheduled_start_at: scheduledStart, auto_approve_late: autoApproveLate, strict_leave: strictLeave, strict_return: strictReturn,
+            // An open test with no scheduled time is open right away: it runs from now until the window closes.
+            ...(isOpen ? { open_window_min: openWindow } : {}),
+            ...(isOpen && !scheduledStart ? { status: "running", started_at: openNow.toISOString(), ends_at: new Date(openNow.getTime() + openWindow * 60000).toISOString() } : {}),
           }),
         });
         if (cr.status === 409) return fail("That code is already used by another session. Choose a different one.", 409);
@@ -523,7 +549,11 @@ Deno.serve(async (req) => {
           return fail("Could not save the questions.", 500);
         }
         if (announce) {
-          const text = scheduledStart
+          const text = isOpen
+            ? (scheduledStart
+              ? `Code ${code} - ${items.length} questions, ${minutes} min each. Opens ${whenLagos(scheduledStart)} for ${windowText(openWindow)}. Start any time while it is open.`
+              : `Code ${code} - ${items.length} questions, ${minutes} min each. Open now for ${windowText(openWindow)}. Join and start any time.`)
+            : scheduledStart
             ? `Code ${code} - ${items.length} questions, ${minutes} min. Starts ${whenLagos(scheduledStart)}. Open PastQ CBT and join before then.`
             : `Code ${code} - ${items.length} questions, ${minutes} min. Open PastQ CBT to join when it starts.`;
           background(pushAll(`New live test: ${title}`, text, code));
@@ -532,6 +562,7 @@ Deno.serve(async (req) => {
           id: created.id, code, title, minutes, questions: items.length, subjects, announced: announce, timer_mode: timerMode,
           join_window_min: joinWindow, score_visibility: scoreVisibility, auto_end: autoEnd, auto_approve_late: autoApproveLate,
           strict_leave: strictLeave, strict_return: strictReturn, scheduled_start_at: scheduledStart,
+          open_window_min: isOpen ? openWindow : null, status: isOpen && !scheduledStart ? "running" : "waiting",
         });
       }
 
@@ -550,6 +581,7 @@ Deno.serve(async (req) => {
             questions: Number((items.headers.get("content-range") ?? "*/0").split("/")[1]) || 0,
             seconds_left: secondsLeft(s), created_at: s.created_at,
             timer_mode: s.timer_mode ?? "shared", join_window_min: s.join_window_min ?? 10, score_visibility: s.score_visibility ?? "after_end",
+            open_window_min: s.open_window_min ?? null,
             auto_end: !!s.auto_end, auto_approve_late: !!s.auto_approve_late, strict_leave: !!s.strict_leave, strict_return: !!s.strict_return,
             scheduled_start_at: isoOrNull(s.scheduled_start_at), starts_in_seconds: startsInSeconds(s), ends_at: isoOrNull(s.ends_at),
           });
@@ -763,7 +795,7 @@ Deno.serve(async (req) => {
       if (!s) return fail("No live session has that code.", 404);
       if (s.status === "ended") return fail("This session has ended.", 410);
       // Personal-timer tests stop taking requests once the late-join window has passed.
-      if (s.status === "running" && s.timer_mode === "personal" && s.started_at &&
+      if (s.status === "running" && s.timer_mode === "personal" && !s.open_window_min && s.started_at &&
           Date.now() > new Date(s.started_at).getTime() + (s.join_window_min ?? 10) * 60000) {
         return fail("This test is no longer accepting new players.", 403);
       }
@@ -773,7 +805,8 @@ Deno.serve(async (req) => {
       const autoName = body.auto_name === true;
       // After the start a new player waits for the admin, unless the admin chose to let late joiners in automatically.
       const late = s.status === "running";
-      const joinStatus = late && !s.auto_approve_late ? "pending" : "approved";
+      // Open-window tests have no late-join approval: anyone may start while the window is open.
+      const joinStatus = late && !s.auto_approve_late && !s.open_window_min ? "pending" : "approved";
       // Strict tests: one phone, one entry. Leaving and coming back under another name is not possible.
       let deviceHash: string | null = null;
       if (s.strict_leave) {
@@ -825,6 +858,15 @@ Deno.serve(async (req) => {
 
       // Locked players whose session has ended are graded from the answers saved when they left.
       if (s.status === "ended" && player.locked && !player.submitted_at) {
+        await submitStored(s, player);
+        const fresh = (await get(`pastq_live_players?id=eq.${player.id}&select=*`))[0];
+        if (fresh) Object.assign(player, fresh);
+      }
+
+      // Open-window tests: someone who was still going when the window closed (and never submitted) is graded
+      // from their saved answers, once the short grace for a late submit has passed.
+      if (s.status === "ended" && s.open_window_min && player.started_at && !player.submitted_at && player.join_status === "approved" &&
+          s.ends_at && new Date(s.ends_at).getTime() + GRACE_MS < Date.now()) {
         await submitStored(s, player);
         const fresh = (await get(`pastq_live_players?id=eq.${player.id}&select=*`))[0];
         if (fresh) Object.assign(player, fresh);
@@ -889,6 +931,13 @@ Deno.serve(async (req) => {
             ? Math.max(0, Math.round((new Date(me.started_at).getTime() + s.duration_min * 60000 - Date.now()) / 1000))
             : 0)
           : secondsLeft(s);
+        // Open-window tests: the window closing ends the test for everyone still going, so it caps the personal clock.
+        if (s.open_window_min) {
+          out.open_window_min = s.open_window_min;
+          out.window_seconds_left = secondsLeft(s);
+          out.window_ends_at = isoOrNull(s.ends_at);
+          if (s.status === "running") out.seconds_left = Math.min(out.seconds_left, out.window_seconds_left);
+        }
         // Strict tests: note that this player has seen the questions, and that they are still here.
         if (s.strict_leave && s.status === "running" && !me.submitted_at && !me.locked) {
           const t = new Date().toISOString();
